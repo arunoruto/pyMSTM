@@ -1,0 +1,3 @@
+[submodule "external/mstm"]
+	path = external/mstm
+	url = https://github.com/dmckwski/MSTM
