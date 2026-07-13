@@ -1,0 +1,76 @@
+--- a/external/mstm/december2023/mstm-modules-33.f90
++++ b/external/mstm/december2023/mstm-modules-33.f90
+@@ -2760,11 +2760,16 @@
+       data include_direct_source/.false./
+       data max_gf_iterations,gf_switch_factor,number_gf_iterations,gf_error_epsilon/1000,.5d0,0,1.d-7/
+       data s_scale_constant/0.01d0/
+-      data layer_thickness/max_number_plane_boundaries*1.d0/
+-      data layer_ref_index(0)/(1.d0,0.d0)/
++      ! (removed for f2py: N*value DATA with named-parameter repeat count
++      ! crashes numpy.f2py's crackfortran parser -- see gh-24746. Default set
++      ! explicitly in mstm_f2py.f90:mstm_init() instead.)
++      ! (removed for f2py: indexed-element DATA statement "arr(idx)/val/" confuses
++      ! crackfortran's module-variable exposure. Default set explicitly in
++      ! mstm_f2py.f90:mstm_init() instead.)
+       data number_plane_boundaries/0/
+       data integration_limit_epsilon,integration_error_epsilon,maximum_integration_subdivisions/1.d-15,1.d-6,25/
+-      data layer_ref_index(1:max_number_plane_boundaries)/max_number_plane_boundaries*(1.d0,0.d0)/
++      ! (removed for f2py: same reason as above -- default set explicitly in
++      ! mstm_f2py.f90:mstm_init() instead.)
+       data pole_integration_radius/1.d-6/
+       data g_cut,g_sing_mag/10.d0,1.d5/
+ 
+@@ -5085,11 +5090,20 @@
+ !  30 March 2011: added optical activity
+ !  March 2013: a few more options
+ !
+-      module spheredata
+-      use specialfuncs
+-      use numconstants
+-      use surface_subroutines
+-      use periodic_lattice_subroutines
++      ! (relocated for f2py: numpy.f2py's f90mod_rules skips exposing ANY
++      ! module-level variable of a module that itself defines a derived
++      ! type (containsderivedtypes()) if that module is reached via 'use'.
++      ! Moving the type definitions to this sibling module -- while leaving
++      ! the sphere_links variable declaration and all subroutines that use
++      ! it in place in spheredata -- keeps this file's spheredata module
++      ! usable exactly as before (spheredata 'use's this module below,
++      ! unrestricted, so sphere_links stays visible to every existing
++      ! caller of "use spheredata", e.g. mstm-scatprops-26.f90) while
++      ! unblocking f2py's exposure of spheredata's other variables
++      ! (t_matrix_order, number_spheres, max_t_matrix_order,
++      ! cross_section_radius, gaussian_beam_constant, number_eqns, ...).
++      module spheredata_types
++      implicit none
+       type linked_sphere_list
+          integer :: sphere
+          type(linked_sphere_list), pointer :: next
+@@ -5098,7 +5112,16 @@
+          integer :: number
+          type(linked_sphere_list), pointer :: sphere_list
+       end type host_list
++      end module spheredata_types
++
++      module spheredata
++      use specialfuncs
++      use numconstants
++      use surface_subroutines
++      use periodic_lattice_subroutines
++      use spheredata_types
+       type(host_list), allocatable :: sphere_links(:,:)
++      !f2py intent(hide) :: sphere_links
+       logical :: one_side_only,recalculate_surface_matrix,any_optically_active
+       logical, target :: store_translation_matrix,effective_medium_simulation, &
+           store_surface_matrix,fft_translation_option,normalize_solution_error
+@@ -5128,7 +5151,9 @@
+       data max_t_matrix_order/100/
+       data normalize_solution_error/.true./
+       data gaussian_beam_constant,gaussian_beam_focal_point/0.d0,0.d0,0.d0,0.d0/
+-      data effective_medium_simulation,effective_ref_index/.false.,(1.d0,0.d0)/
++      ! (removed for f2py: mixing a logical and complex(8) variable in one
++      ! DATA statement crashes crackfortran when the complex var is not first.
++      ! Defaults set explicitly in mstm_f2py.f90:mstm_init() instead.)
+ 
+       contains
+ 

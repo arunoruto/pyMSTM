@@ -1,0 +1,43 @@
+--- a/external/mstm/december2023/random_configuration-10.f90
++++ b/external/mstm/december2023/random_configuration-10.f90
+@@ -1,6 +1,14 @@
+-      module random_sphere_configuration
+-      use mpidefs
+-      use specialfuncs
++      ! (relocated for f2py: same reason as spheredata_types in
++      ! mstm-modules-33.f90 -- numpy.f2py skips exposing ANY module-level
++      ! variable of a module that itself defines a derived type. Moving the
++      ! type definitions to this sibling module -- while leaving the
++      ! cell_list/coll_data variable declarations and all subroutines that
++      ! use them in place in random_sphere_configuration -- keeps this
++      ! file's behavior identical (random_sphere_configuration 'use's this
++      ! module below, unrestricted, so every existing caller of "use
++      ! random_sphere_configuration" still sees everything unchanged) while
++      ! unblocking f2py's exposure of target_shape and friends.
++      module random_sphere_configuration_types
+       implicit none
+       type coll_list
+          logical :: wallcoll
+@@ -15,6 +23,13 @@
+          integer :: number_elements
+          type(l_list), pointer :: members
+       end type c_list
++      end module random_sphere_configuration_types
++
++      module random_sphere_configuration
++      use mpidefs
++      use specialfuncs
++      use random_sphere_configuration_types
++      implicit none
+       logical  :: target_width_specified
+       logical, target :: sphere_1_fixed,periodic_bc(3),random_lattice_configuration
+       integer, private :: cell_dim(3)
+@@ -28,6 +43,8 @@
+       real(8) :: sim_timings(10),time_0
+       type(c_list), allocatable :: cell_list(:,:,:)
+       type(coll_list), allocatable :: coll_data(:)
++      !f2py intent(hide) :: cell_list
++      !f2py intent(hide) :: coll_data
+       character*1 :: c_temp
+       data pi,fv_crit,time_step/3.1415926535897932385d0,0.25d0,.1d0/
+       data minimum_gap,sphere_1_fixed,target_shape/1.0d-3,.false.,0/
