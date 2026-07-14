@@ -108,24 +108,20 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.21
         env:
-          # cp39 temporarily excluded -- diagnostic step, not a decision
-          # yet. Three real release runs all segfaulted (SIGSEGV, exit
-          # 139) inside a two-sphere solve, deep in the compiled
-          # extension, deterministically on cp39 and nowhere else tried
-          # (local dev, Nix build, CI's own test.yml on a modern Python)
-          # -- ruled out compiler version (survived a GCC 10 -> GCC 12
-          # jump via the manylinux_2_28 switch) and the legacy distutils
-          # f2py backend (survived forcing --backend meson explicitly)
-          # as causes. cp39 is the only build that resolves numpy<2.0
-          # (numpy 1.26.x, the last release supporting Python 3.9) --
-          # every other build/environment that's worked so far resolved
-          # numpy>=2.0. Running cp310-cp313 in isolation here to confirm
-          # they're actually fine before deciding whether to drop cp39
-          # (Python 3.9 is already in its final year of upstream
-          # security-only support) or keep digging.
+          # cp39/cp310 dropped for good (see pyproject.toml's
+          # requires-python comment) -- two independent, real cibuildwheel
+          # failures below cp311: cp39 segfaulted (SIGSEGV) deep in a
+          # two-sphere solve (ruled out compiler version and f2py's
+          # legacy distutils backend as causes, both survived); cp310
+          # crashed earlier, during the f2py build itself (KeyError:
+          # 'void' in numpy's own crackfortran). Both are the only builds
+          # resolving a numpy old enough to hit these, and both Python
+          # versions are in their final year of upstream support anyway
+          # -- not worth separately chasing two legacy-numpy-version bugs
+          # for them.
           # PyPy/musllinux skipped -- Fortran extensions aren't a realistic
           # target there and it doubles build time for no real benefit.
-          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
+          CIBW_BUILD: "cp311-* cp312-* cp313-*"
           CIBW_SKIP: "*-musllinux*"
           CIBW_ARCHS_MACOS: "auto"
           CIBW_BUILD_VERBOSITY: "1"
