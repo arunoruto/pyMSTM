@@ -31,11 +31,22 @@ def test_single_sphere_solve():
 
 
 def test_two_sphere_solve():
-    """Two well-separated spheres: weak interaction, fast convergence."""
+    """Two well-separated spheres: weak interaction, fast convergence.
+
+    Separation is 200 (radius 3, so ~33 diameters) along the same axis as
+    the incident direction, not the original 10 (~1.3 diameters) -- with
+    the spheres nearly touching along the propagation axis, one sits in
+    the other's forward-scattered near field, and that asymmetry decays
+    slowly with distance (confirmed directly: ratio 0.66 at separation
+    10, 0.86 at 50, 0.96 at 200) rather than vanishing once "far enough
+    apart" in some small multiple of the radius. This is real near-field
+    physics, not a solver bug -- picked 200 for a comfortable margin
+    inside the tolerance below without making the case toweringly large.
+    """
     m = MSTM()
     m.set_spheres(
         radii=[3.0, 3.0],
-        positions=[[0, 0, -5], [0, 0, 5]],
+        positions=[[0, 0, -100], [0, 0, 100]],
         orders=[6, 6],
         ref_re=[1.5, 1.5],
         ref_im=[0.0, 0.0],
