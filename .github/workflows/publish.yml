@@ -10,111 +10,51 @@ jobs:
   testing:
     uses: ./.github/workflows/test.yml
 
-  release:
-    name: Determine next version and tag it
+  determine-version:
+    name: Determine next version (no side effects yet)
     runs-on: ubuntu-latest
     needs:
       - testing
-
-    concurrency:
-      group: ${{ github.workflow }}-release-${{ github.ref_name }}
-      cancel-in-progress: false
-    permissions:
-      contents: write
-
     outputs:
-      released: ${{ steps.release.outputs.released }}
-      tag: ${{ steps.release.outputs.tag }}
-      version: ${{ steps.release.outputs.version }}
-
+      released: ${{ steps.compute.outputs.released }}
+      version: ${{ steps.compute.outputs.version }}
     steps:
-      - name: Setup | Checkout Repository on Release Branch
+      - name: Setup | Checkout Repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
           fetch-depth: 0
-          submodules: recursive
-
-      - name: Setup | Force release branch to be at workflow sha
-        run: git reset --hard ${{ github.sha }}
-
-      - name: Setup | Install gfortran
-        # `uv sync` also builds/installs pymstm itself (not just the
-        # `build` extra's own deps), and pyproject.toml's
-        # no-build-isolation-package = ["pymstm"] means that build needs
-        # gfortran and meson-python already present in *this* venv --
-        # same reason test.yml installs it before syncing.
-        run: sudo apt-get update && sudo apt-get install -y gfortran
 
       - name: Setup | Install uv
         uses: astral-sh/setup-uv@v4
 
-      - name: Setup | Install build dependencies
-        # `build-ext` for meson/ninja/meson-python (needed to build
-        # pymstm itself, see gfortran step above) without pytest/
-        # pytest-cov along for the ride -- this job never runs the test
-        # suite, that's test.yml's job. `build` for
-        # python-semantic-release.
-        run: uv sync --extra build --extra build-ext
+      - name: Setup | Install python-semantic-release only
+        # --no-install-project: this job only ever calls `semantic-release
+        # version --print`, a pure dry run that never touches
+        # build_command -- unlike the real `release` job below, it never
+        # needs pymstm itself built, so it can skip gfortran entirely
+        # (confirmed locally: --print works fine against just the `build`
+        # extra's own deps).
+        run: uv sync --extra build --no-install-project
 
-      - name: Evaluate | Verify upstream has NOT changed
-        shell: bash
+      - name: Evaluate | Compute next version without tagging
+        id: compute
         run: |
-          set +o pipefail
-
-          UPSTREAM_BRANCH_NAME="$(git status -sb | head -n 1 | cut -d' ' -f2 | grep -E '\.{3}' | cut -d'.' -f4)"
-          printf '%s\n' "Upstream branch name: $UPSTREAM_BRANCH_NAME"
-
-          set -o pipefail
-
-          if [ -z "$UPSTREAM_BRANCH_NAME" ]; then
-              printf >&2 '%s\n' "::error::Unable to determine upstream branch name!"
-              exit 1
+          CURRENT="$(grep -Po '(?<=^version = ")[^"]+' pyproject.toml)"
+          NEXT="$(uv run semantic-release version --print 2>/dev/null)"
+          echo "Current version: $CURRENT"
+          echo "Next version:    $NEXT"
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+          if [ "$NEXT" != "$CURRENT" ]; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
           fi
-
-          git fetch "${UPSTREAM_BRANCH_NAME%%/*}"
-
-          if ! UPSTREAM_SHA="$(git rev-parse "$UPSTREAM_BRANCH_NAME")"; then
-              printf >&2 '%s\n' "::error::Unable to determine upstream branch sha!"
-              exit 1
-          fi
-
-          HEAD_SHA="$(git rev-parse HEAD)"
-
-          if [ "$HEAD_SHA" != "$UPSTREAM_SHA" ]; then
-              printf >&2 '%s\n' "[HEAD SHA] $HEAD_SHA != $UPSTREAM_SHA [UPSTREAM SHA]"
-              printf >&2 '%s\n' "::error::Upstream has changed, aborting release..."
-              exit 1
-          fi
-
-          printf '%s\n' "Verified upstream branch has not changed, continuing with release..."
-
-      - name: Action | Semantic Version Release
-        # Bumps pyproject.toml/src/pymstm/__init__.py's version, builds
-        # the sdist only (build_command below) -- compiled wheels can't
-        # happen here (no cross-platform toolchain in one job), that's
-        # what build_wheels does afterwards against the tag this step
-        # creates. Commits the bump, tags, pushes, and creates the GitHub
-        # Release (with the sdist attached as an asset).
-        id: release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@users.noreply.github.com"
-          uv run semantic-release -v version
-
-      - name: Publish | Upload sdist to GitHub Release Assets
-        if: steps.release.outputs.released == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: uv run semantic-release publish
 
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
     needs:
-      - release
-    if: needs.release.outputs.released == 'true'
+      - determine-version
+    if: needs.determine-version.outputs.released == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -123,21 +63,36 @@ jobs:
         # both failed on the first real release run (macOS: Homebrew's
         # latest gfortran links libgfortran/libquadmath requiring macOS
         # 14+, tripping delocate-wheel's deployment-target check; see
-        # the CIBW_BEFORE_ALL_MACOS/CIBW_ENVIRONMENT_MACOS comments
-        # below for the fix, prepared but not yet re-verified end to
-        # end) -- narrowing to Linux avoids burning macOS runner minutes
-        # on repeated iterations while that's still being sorted out.
-        # Windows needs a whole separate MinGW/gfortran toolchain story,
-        # and Linux aarch64 would mean QEMU-emulated compiles (slow,
-        # fragile for a first pass) -- both left as a follow-up too.
+        # the CIBW_ENVIRONMENT_MACOS comment below for the fix, prepared
+        # but not yet re-verified end to end) -- narrowing to Linux
+        # avoids burning macOS runner minutes on repeated iterations
+        # while that's still being sorted out. Windows needs a whole
+        # separate MinGW/gfortran toolchain story, and Linux aarch64
+        # would mean QEMU-emulated compiles (slow, fragile for a first
+        # pass) -- both left as a follow-up too.
         os: [ubuntu-latest]
 
     steps:
-      - name: Setup | Checkout Repository at Release Tag
+      - name: Setup | Checkout Repository
+        # No tag exists yet at this point -- that's the whole point of
+        # this reordering (see determine-version/release comments below).
+        # github.sha is fixed for the entire workflow run, so this and
+        # every other job here build from the exact same commit
+        # determine-version already computed a version for for.
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.release.outputs.tag }}
           submodules: recursive
+
+      - name: Setup | Stamp the version determine-version computed
+        # No tag/commit exists for this version yet -- release (below)
+        # only creates one once these wheels are confirmed good. Patch
+        # the version strings locally (uncommitted, this checkout is
+        # thrown away after the job) purely so the wheel filenames and
+        # METADATA carry the version that *will* be tagged, instead of
+        # whatever version.toml/`__init__.py` still say on plain main.
+        run: |
+          sed -i 's/^version = ".*"/version = "${{ needs.determine-version.outputs.version }}"/' pyproject.toml
+          sed -i 's/^__version__ = ".*"/__version__ = "${{ needs.determine-version.outputs.version }}"/' src/pymstm/__init__.py
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.21
@@ -212,12 +167,119 @@ jobs:
           name: wheels-${{ matrix.os }}
           path: ./wheelhouse/*.whl
 
+  release:
+    name: Tag and create the GitHub Release (wheels already verified)
+    runs-on: ubuntu-latest
+    needs:
+      - determine-version
+      - build_wheels
+
+    concurrency:
+      group: ${{ github.workflow }}-release-${{ github.ref_name }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+
+    steps:
+      - name: Setup | Checkout Repository on Release Branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup | Force release branch to be at workflow sha
+        run: git reset --hard ${{ github.sha }}
+
+      - name: Setup | Install gfortran
+        # `uv sync` also builds/installs pymstm itself (not just the
+        # `build` extra's own deps), and pyproject.toml's
+        # no-build-isolation-package = ["pymstm"] means that build needs
+        # gfortran and meson-python already present in *this* venv --
+        # same reason test.yml installs it before syncing.
+        run: sudo apt-get update && sudo apt-get install -y gfortran
+
+      - name: Setup | Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Setup | Install build dependencies
+        # `build-ext` for meson/ninja/meson-python (needed to build
+        # pymstm itself, see gfortran step above) without pytest/
+        # pytest-cov along for the ride -- this job never runs the test
+        # suite, that's test.yml's job. `build` for
+        # python-semantic-release.
+        run: uv sync --extra build --extra build-ext
+
+      - name: Evaluate | Verify upstream has NOT changed
+        # Wheels take a while to build -- more important here than it
+        # was before this job moved to run last, since there's now a
+        # longer window for main to have drifted between our checkout
+        # above and the push below.
+        shell: bash
+        run: |
+          set +o pipefail
+
+          UPSTREAM_BRANCH_NAME="$(git status -sb | head -n 1 | cut -d' ' -f2 | grep -E '\.{3}' | cut -d'.' -f4)"
+          printf '%s\n' "Upstream branch name: $UPSTREAM_BRANCH_NAME"
+
+          set -o pipefail
+
+          if [ -z "$UPSTREAM_BRANCH_NAME" ]; then
+              printf >&2 '%s\n' "::error::Unable to determine upstream branch name!"
+              exit 1
+          fi
+
+          git fetch "${UPSTREAM_BRANCH_NAME%%/*}"
+
+          if ! UPSTREAM_SHA="$(git rev-parse "$UPSTREAM_BRANCH_NAME")"; then
+              printf >&2 '%s\n' "::error::Unable to determine upstream branch sha!"
+              exit 1
+          fi
+
+          HEAD_SHA="$(git rev-parse HEAD)"
+
+          if [ "$HEAD_SHA" != "$UPSTREAM_SHA" ]; then
+              printf >&2 '%s\n' "[HEAD SHA] $HEAD_SHA != $UPSTREAM_SHA [UPSTREAM SHA]"
+              printf >&2 '%s\n' "::error::Upstream has changed, aborting release..."
+              exit 1
+          fi
+
+          printf '%s\n' "Verified upstream branch has not changed, continuing with release..."
+
+      - name: Action | Semantic Version Release
+        # Bumps pyproject.toml/src/pymstm/__init__.py's version, builds
+        # the sdist (build_command below), commits, tags, pushes, and
+        # creates the GitHub Release (sdist attached as an asset) --
+        # only reached after build_wheels has already succeeded, so
+        # (unlike the very first version of this pipeline) a tag/release
+        # only ever gets created once we already know real wheels exist
+        # for it. Recomputes the same version determine-version already
+        # printed (nothing has changed the commit history since), so the
+        # wheels build_wheels already built and stamped stay correct.
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          uv run semantic-release -v version
+
+      - name: Publish | Upload sdist to GitHub Release Assets
+        if: steps.release.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run semantic-release publish
+
   publish:
     name: Publish to PyPI and attach wheels to the GitHub Release
     needs:
       - release
       - build_wheels
-    if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
 
     environment:
