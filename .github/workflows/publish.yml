@@ -59,9 +59,26 @@ jobs:
 
   wheels:
     # Build the wheels + sdist for the tag release just created. Reuses
-    # the exact same build that validated on the PR.
+    # the exact same build that's available on demand via wheels.yml.
     needs: release
     if: needs.release.outputs.released == 'true'
+    # GitHub validates a called reusable workflow's permission needs
+    # *statically*, across all its jobs, regardless of which actually run
+    # at runtime -- wheels.yml's check_comment job (skipped here, this is
+    # a workflow_call, not issue_comment) still declares issues:write/
+    # pull-requests:read, which this workflow's top-level permissions:
+    # contents: read alone doesn't cover. Without this override the whole
+    # run fails at dispatch time with "startup_failure", before any job
+    # even starts -- this exact bug hit pyFaSTMM's identical publish.yml
+    # on its first real dispatch after mirroring this pipeline (that
+    # dispatch failed with 0 jobs run; adding this same override there
+    # got it past dispatch and into the real release). Applying the same
+    # fix here proactively: this file predates wheels.yml growing
+    # check_comment, so it's never actually exercised this call path.
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
     uses: ./.github/workflows/wheels.yml
     with:
       ref: ${{ needs.release.outputs.tag }}
