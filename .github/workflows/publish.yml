@@ -38,17 +38,20 @@ jobs:
 
       - name: Evaluate | Compute next version without tagging
         id: compute
-        # Reading the current version via `grep -P` (PCRE lookbehind)
-        # failed outright on this runner -- confirmed by the job log
-        # showing zero output and aborting within ~0.1s, far too fast
-        # for semantic-release to have even started, meaning the grep
-        # itself was the failure. Python's tomllib is already available
-        # (Python 3.11+, which every runner here has) and is a proper
-        # TOML parser rather than a regex guessing at TOML's grammar --
-        # more robust than chasing whatever made -P misbehave here.
+        # `uv run <cmd>` implicitly re-syncs the venv first by default,
+        # regardless of an earlier separate `uv sync --no-install-project`
+        # -- that implicit sync doesn't inherit --no-install-project, so
+        # it tries to build/install pymstm itself again, which needs
+        # gfortran (deliberately not installed in this job, see the
+        # step above). That failure was hidden by this step's own
+        # `2>/dev/null` on the semantic-release line, so it looked like
+        # total silence rather than a build error -- confirmed locally:
+        # reproducible without --no-sync, gone with it. --no-sync trusts
+        # the venv exactly as the earlier `uv sync --no-install-project`
+        # left it.
         run: |
           CURRENT="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
-          NEXT="$(uv run semantic-release version --print 2>/dev/null)"
+          NEXT="$(uv run --no-sync semantic-release version --print 2>/dev/null)"
           echo "Current version: $CURRENT"
           echo "Next version:    $NEXT"
           echo "version=$NEXT" >> "$GITHUB_OUTPUT"
