@@ -38,11 +38,22 @@ jobs:
       - name: Setup | Force release branch to be at workflow sha
         run: git reset --hard ${{ github.sha }}
 
+      - name: Setup | Install gfortran
+        # `uv sync` also builds/installs pymstm itself (not just the
+        # `build` extra's own deps), and pyproject.toml's
+        # no-build-isolation-package = ["pymstm"] means that build needs
+        # gfortran and meson-python already present in *this* venv --
+        # same reason test.yml installs it before syncing.
+        run: sudo apt-get update && sudo apt-get install -y gfortran
+
       - name: Setup | Install uv
         uses: astral-sh/setup-uv@v4
 
       - name: Setup | Install build dependencies
-        run: uv sync --extra build
+        # `dev` for meson/ninja/meson-python (needed to build pymstm
+        # itself, see gfortran step above); `build` for
+        # python-semantic-release.
+        run: uv sync --extra build --extra dev
 
       - name: Evaluate | Verify upstream has NOT changed
         shell: bash
