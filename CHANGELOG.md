@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.1.0 (2026-07-14)
+
+### Features
+
+- Add Python 3.14 wheels and simplify the release pipeline
+  ([`1668f18`](https://github.com/arunoruto/pyMSTM/commit/1668f187b134bd11fe09c8d7327e4d2e2c006ab2))
+
+
 ## v1.0.0 (2026-07-14)
 
 - Initial Release

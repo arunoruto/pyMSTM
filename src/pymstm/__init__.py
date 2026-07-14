@@ -3,4 +3,4 @@
 from pymstm._mstm import MSTM
 
 __all__ = ["MSTM"]
-__version__ = "1.0.0"
+__version__ = "1.1.0"

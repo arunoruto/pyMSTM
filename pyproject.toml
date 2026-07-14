@@ -1,6 +1,6 @@
 [project]
 name = "pymstm"
-version = "1.0.0"
+version = "1.1.0"
 description = "Python bindings for the MSTM (Multiple Sphere T-Matrix) Fortran library"
 readme = "README.md"
 # Raised from >=3.9 after two independent, real cibuildwheel failures
