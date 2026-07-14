@@ -178,7 +178,7 @@
             };
           };
 
-          default = pymstm;
+          default = mstm;
         }
       );
 
