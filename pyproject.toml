@@ -9,11 +9,10 @@ readme = "README.md"
 # causes, both survived; cp310 crashes earlier, during the f2py build
 # itself (KeyError: 'void' in numpy's own crackfortran, generating
 # module hooks for a derived-type array it can't map to a C type).
-# cibuildwheel stops at the first failure, so cp311+ has never actually
-# been reached yet -- but rather than separately chase two different
-# legacy-numpy-version bugs for Python versions in their final year of
-# upstream support anyway, dropping the floor to what CIBW_BUILD in
-# .github/workflows/publish.yml now actually targets (cp311-cp313).
+# Rather than separately chase two different legacy-numpy-version bugs
+# for Python versions in their final year of upstream support anyway,
+# the floor matches what the wheels actually cover -- see
+# [tool.cibuildwheel] `build` below (cp311 through cp314).
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -29,14 +28,14 @@ classifiers = [
 dependencies = ["numpy>=1.25"]
 
 [project.optional-dependencies]
-# Split out from `dev` so publish.yml's release job (which only needs to
-# build pymstm itself, per no-build-isolation-package below -- it never
-# runs the test suite) can pull in just the compiler tooling without
-# pytest/pytest-cov along for the ride.
-build-ext = ["meson>=1.1", "ninja", "meson-python>=0.15"]
-dev = ["pytest>=7", "pytest-cov", "pymstm[build-ext]"]
+# meson/ninja/meson-python are here (not just build-system.requires)
+# because [tool.uv] no-build-isolation-package below builds pymstm in
+# this project's own venv, so its build backend must already be present
+# in it. No separate `build` extra for python-semantic-release anymore --
+# the release runs entirely via the official PSR GitHub Action (see
+# .github/workflows/publish.yml), which bundles it.
+dev = ["pytest>=7", "pytest-cov", "meson>=1.1", "ninja", "meson-python>=0.15"]
 dashboard = ["streamlit>=1.28", "pandas>=2.0", "plotly>=5.0", "pydantic>=2.0"]
-build = ["python-semantic-release ~= 10.0"]
 
 [project.urls]
 Repository = "https://github.com/arunoruto/pyMSTM"
@@ -50,18 +49,38 @@ venv = ".venv"
 version_variables = ["src/pymstm/__init__.py:__version__"]
 version_toml = ["pyproject.toml:project.version"]
 major_on_zero = false
-# Only the sdist here -- compiled wheels need a per-platform toolchain
-# (gfortran, on Linux/macOS separately) that doesn't fit in this single
-# job. .github/workflows/publish.yml's build_wheels job builds the actual
-# wheels afterwards, against the tag this bump creates, via cibuildwheel.
-build_command = """
-    uv lock --upgrade-package "$PACKAGE_NAME"
-    git add uv.lock
-    uv build --sdist
-"""
+# No build_command: semantic-release only bumps the version, commits,
+# tags, and creates the GitHub Release. All artifacts (sdist + wheels)
+# are built afterwards by .github/workflows/wheels.yml against the tag
+# this creates, then published to PyPI + attached to the release by
+# publish.yml's publish job. (Consequence: uv.lock's own pymstm version
+# field trails one release behind, which is cosmetic for a library.)
 
 [tool.semantic_release.branches.main]
 match = "main"
+
+# --- cibuildwheel: how the published wheels are built ---
+#
+# Kept here (not as CIBW_* env vars in the workflow) so the workflow step
+# is a single bare `uses: pypa/cibuildwheel`, and so the exact same config
+# can be exercised locally with the `cibuildwheel` CLI. Every setting
+# below was arrived at empirically over a string of real release runs --
+# see each comment.
+[tool.cibuildwheel]
+# cp311 floor matches requires-python (cp39/cp310 dropped after real,
+# independent build failures -- see requires-python's comment). cp314
+# included now that it's released. PyPy/musllinux skipped -- a Fortran
+# extension isn't a realistic target there and it doubles build time for
+# no real benefit.
+build = "cp311-* cp312-* cp313-* cp314-*"
+skip = "*-musllinux*"
+build-verbosity = 1
+# A real post-build check: import the built wheel and run an actual
+# two-sphere solve, exercising the compiled _mstm_ext extension end to
+# end (a bare import wouldn't catch a mislinked/miscompiled .so). In a
+# file, not an inline `python -c`, to avoid the YAML-folding whitespace
+# bugs that inline command hit repeatedly. {project} = the repo root.
+test-command = "python {project}/tools/wheel_smoke_test.py"
 
 [tool.cibuildwheel.linux]
 # cibuildwheel's default manylinux2014 image is CentOS 7 / GCC 10 (via
@@ -77,6 +96,21 @@ match = "main"
 # 8, a much newer GCC) for what looks like the same class of reason --
 # matching that precedent rather than guessing at compiler flags blind.
 manylinux-x86_64-image = "manylinux_2_28"
+# x86_64 only: cibuildwheel's default Linux arch set also includes i686
+# (32-bit), where numpy has no prebuilt wheel, forcing a multi-minute
+# from-source numpy compile for an architecture nobody needs here.
+archs = ["x86_64"]
+# manylinux_2_28 is AlmaLinux 8 -- gcc-gfortran is in its base repos.
+before-all = "yum install -y gcc-gfortran"
+
+# macOS is not in the release matrix yet (see .github/workflows/wheels.yml),
+# but keep its known-good setting ready so re-adding it is a one-line
+# matrix change: use the gfortran-13 GitHub's macOS runners ship
+# pre-installed (a freshly `brew install`ed gcc links libgfortran/
+# libquadmath requiring macOS 14+, which delocate-wheel then refuses to
+# repair for an older-targeted wheel -- matches NumPy's own approach).
+[tool.cibuildwheel.macos]
+environment = { FC = "gfortran-13" }
 
 [tool.uv]
 # meson-python's editable-install loader hardcodes the absolute path to

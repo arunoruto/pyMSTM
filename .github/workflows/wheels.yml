@@ -1,0 +1,81 @@
+name: Wheels
+
+# Single source of truth for *how* pyMSTM's wheels + sdist are built.
+#
+# Runs two ways:
+#   - On every PR / push to main: plain validation. Building the full
+#     wheel matrix here is what lets the release stay tag-first -- main is
+#     continuously proven buildable, so a tag is only ever created for a
+#     commit whose wheels already built green.
+#   - Called by publish.yml (workflow_call) with the freshly-created tag:
+#     the same build, whose artifacts publish.yml then ships to PyPI.
+#
+# All cibuildwheel configuration lives in pyproject.toml's
+# [tool.cibuildwheel] -- deliberately not here as CIBW_* env vars, so this
+# stays a bare `uses:` and the exact same build is reproducible locally
+# with the `cibuildwheel` CLI.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref (tag) to build. Empty builds the triggering commit."
+        type: string
+        required: false
+        default: ""
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build_wheels:
+    name: Wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # A matrix of one for now -- kept a matrix so macOS/Windows are a
+        # one-line add later (their cibuildwheel settings are already
+        # staged in pyproject.toml's [tool.cibuildwheel.macos]).
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Empty on PR/push (checks out the triggering commit); the tag
+          # when publish.yml calls this workflow.
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+
+      - uses: pypa/cibuildwheel@v4.1.0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}
+          path: ./wheelhouse/*.whl
+
+  build_sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+
+      - name: Install gfortran
+        # meson-python's sdist build runs `meson setup`, which requires a
+        # Fortran compiler to be found -- even though producing the sdist
+        # (a source tarball) compiles nothing itself.
+        run: sudo apt-get update && sudo apt-get install -y gfortran
+
+      - name: Build sdist
+        run: pipx run build --sdist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-sdist
+          path: ./dist/*.tar.gz
