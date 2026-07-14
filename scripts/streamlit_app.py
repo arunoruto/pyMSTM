@@ -461,7 +461,7 @@ def _single_run(inp_text: str, config: MstmInpConfig, positions: np.ndarray):
             df.style.format(
                 {"CLI": "{:.6f}", "pyMSTM": "{:.6f}", "Rel.diff": "{:.2e}"}
             ),
-            use_container_width=True,
+            width='stretch',
         )
     elif cli_res:
         st.dataframe(pd.DataFrame([cli_res["total"]]))
@@ -491,7 +491,7 @@ def _single_run(inp_text: str, config: MstmInpConfig, positions: np.ndarray):
                 df2.style.format(
                     {"CLI": "{:.6f}", "pyMSTM": "{:.6f}", "Diff": "{:.2e}"}
                 ),
-                use_container_width=True,
+                width='stretch',
             )
 
     # S11
@@ -519,7 +519,7 @@ def _single_run(inp_text: str, config: MstmInpConfig, positions: np.ndarray):
             marker=dict(color="red", size=4, symbol="circle-open"),
         )
         fig.update_layout(xaxis_title="θ (deg)", yaxis_title="S₁₁", height=450)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     elif sc:
         fig = go.Figure()
         fig.add_scatter(
@@ -529,7 +529,7 @@ def _single_run(inp_text: str, config: MstmInpConfig, positions: np.ndarray):
             name="CLI S₁₁",
         )
         fig.update_layout(xaxis_title="θ (deg)", yaxis_title="S₁₁", height=450)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     else:
         st.info("Enable scattering matrix in the config.")
 
@@ -725,27 +725,32 @@ with tab_config:
                 cfg.particles.positions_file = fname
                 file_exists = True
 
-    # --- sidebar ---
-    with st.sidebar:
-        st.subheader("Config Summary")
-        st.metric("Cluster", f"{cfg.particles.positions_file}")
-        wl = cfg.wavelengths.get_wavelengths_m() * 1e6
-        n = len(wl)
-        st.metric("Wavelengths", f"{wl[0]:.1f} – {wl[-1]:.1f} µm  ({n} steps)")
-        n_re, n_im = cfg.particles.refractive_index
-        st.metric("n_particle", f"{n_re:.2f} + {n_im:.3f}i")
-        mr, mi = cfg.medium.refractive_index
-        st.metric("n_medium", f"{mr:.2f} + {mi:.3f}i")
-        st.metric(
-            "Solver", f"ε={cfg.solver.tolerance:.0e}  maxit={cfg.solver.max_iterations}"
-        )
-        st.metric(
-            "Scattering matrix", "✓" if cfg.output.calculate_scattering_matrix else "✗"
-        )
+    # --- Config summary ---
+    # Inline (not st.sidebar) -- a sidebar is a single global container
+    # regardless of which tab is active, so a per-tab summary placed
+    # there stays visible (and stacks with the other tab's own sidebar
+    # content) no matter which tab you're actually looking at. An inline
+    # row above the Run button stays correctly scoped to this tab.
+    st.subheader("Config Summary")
+    wl = cfg.wavelengths.get_wavelengths_m() * 1e6
+    n = len(wl)
+    n_re, n_im = cfg.particles.refractive_index
+    mr, mi = cfg.medium.refractive_index
+    sc1, sc2, sc3, sc4, sc5, sc6 = st.columns(6)
+    sc1.metric("Cluster", f"{cfg.particles.positions_file}")
+    sc2.metric("Wavelengths", f"{wl[0]:.1f} – {wl[-1]:.1f} µm  ({n} steps)")
+    sc3.metric("n_particle", f"{n_re:.2f} + {n_im:.3f}i")
+    sc4.metric("n_medium", f"{mr:.2f} + {mi:.3f}i")
+    sc5.metric(
+        "Solver", f"ε={cfg.solver.tolerance:.0e}  maxit={cfg.solver.max_iterations}"
+    )
+    sc6.metric(
+        "Scattering matrix", "✓" if cfg.output.calculate_scattering_matrix else "✗"
+    )
 
     # --- Run ---
     if not st.button(
-        "▶ Run Sweep", type="primary", use_container_width=True, key="run_sweep"
+        "▶ Run Sweep", type="primary", width='stretch', key="run_sweep"
     ):
         st.info("Configure and click **Run Sweep**.")
         st.stop()
@@ -820,7 +825,7 @@ with tab_config:
                 y_label="Phase function S₁₁",
                 title="Phase Function",
             )
-            st.plotly_chart(fig_phase, use_container_width=True)
+            st.plotly_chart(fig_phase, width='stretch')
         with colB:
             fig_dlp = _plot_sweep(
                 cli_runs,
@@ -830,7 +835,7 @@ with tab_config:
                 y_label="DLP = −S₁₂",
                 title="Degree of Linear Polarization",
             )
-            st.plotly_chart(fig_dlp, use_container_width=True)
+            st.plotly_chart(fig_dlp, width='stretch')
 
         # Q_ext vs λ
         fig_eff = go.Figure()
@@ -855,7 +860,7 @@ with tab_config:
             height=350,
             hovermode="x unified",
         )
-        st.plotly_chart(fig_eff, use_container_width=True)
+        st.plotly_chart(fig_eff, width='stretch')
     else:
         # Only pyMSTM
         angles = py_runs[0]["scattering_matrix"]["angles_deg"]
@@ -882,7 +887,7 @@ with tab_config:
                 xaxis_title="θ (deg)",
                 yaxis_title="S₁₁",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         with cb:
             fig2 = go.Figure()
             for i, py in enumerate(py_runs):
@@ -901,7 +906,7 @@ with tab_config:
                 xaxis_title="θ (deg)",
                 yaxis_title="−S₁₂",
             )
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
 
         fig_eff = go.Figure()
         fig_eff.add_scatter(
@@ -911,7 +916,7 @@ with tab_config:
             name="pyMSTM Q_ext",
         )
         fig_eff.update_layout(title="Q_ext vs λ", xaxis_title="λ (µm)", height=350)
-        st.plotly_chart(fig_eff, use_container_width=True)
+        st.plotly_chart(fig_eff, width='stretch')
 
     # Cleanup temp
     import shutil
@@ -948,7 +953,7 @@ with tab_config:
                     "py iters": py.get("iterations", "?"),
                 }
             )
-        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+        st.dataframe(pd.DataFrame(rows), width='stretch')
 
         min_tord = min((py.get("tord", 999) for py in py_runs), default=999)
         if min_tord < 10:
@@ -976,16 +981,16 @@ with tab_single:
         st.error(f"Parse error: {e}")
         st.stop()
 
-    with st.sidebar:
-        st.subheader("Config")
-        st.metric("Spheres", config.nspheres)
-        st.metric("Medium", f"{config.medium_ref_re:.3f}+{config.medium_ref_im:.3f}i")
-        st.metric("Solver ε", f"{config.solution_eps:.1e}")
-        st.metric("Max iters", config.max_iterations)
-        st.metric("SM", "✓" if config.calculate_scattering_matrix else "✗")
+    st.subheader("Config")
+    ic1, ic2, ic3, ic4, ic5 = st.columns(5)
+    ic1.metric("Spheres", config.nspheres)
+    ic2.metric("Medium", f"{config.medium_ref_re:.3f}+{config.medium_ref_im:.3f}i")
+    ic3.metric("Solver ε", f"{config.solution_eps:.1e}")
+    ic4.metric("Max iters", config.max_iterations)
+    ic5.metric("SM", "✓" if config.calculate_scattering_matrix else "✗")
 
     if st.button(
-        "▶ Run Comparison", type="primary", use_container_width=True, key="run_single"
+        "▶ Run Comparison", type="primary", width='stretch', key="run_single"
     ):
         positions = np.array([[s.x, s.y, s.z, s.radius] for s in config.spheres])
         _single_run(inp_text, config, positions)
