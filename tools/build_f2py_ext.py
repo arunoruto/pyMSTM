@@ -51,6 +51,24 @@ def main():
             ":",
             "-m",
             "_mstm_ext",
+            # f2py's "-c" mode defaults to the legacy numpy.distutils
+            # backend, silently falling back to the modern meson backend
+            # only once numpy itself no longer ships distutils at all
+            # (numpy>=2.0, which is what a Python>=3.10ish build resolves
+            # -- older interpreters like cp39 still resolve a numpy<2.0
+            # that keeps distutils working, so they get the legacy path
+            # by default). Confirmed via a real segfault (SIGSEGV, exit
+            # 139) reproducible only in CI's cp39 leg, on *two* different
+            # manylinux images/GCC versions (devtoolset-10/GCC 10 and
+            # gcc-toolset-12/GCC 12) -- ruling out a GCC-version cause
+            # and pointing at the distutils backend itself, which is
+            # unmaintained (fully removed in numpy>=2.0) and never
+            # exercised by local dev or CI's cp312/cp313 legs, both of
+            # which always get the meson backend already. Forcing meson
+            # explicitly here makes every Python version build through
+            # the same, actively-maintained path.
+            "--backend",
+            "meson",
         ]
         subprocess.run(cmd, cwd=scratch, env=env, check=True)
         matches = glob.glob(os.path.join(scratch, "_mstm_ext*.so")) + glob.glob(
