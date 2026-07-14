@@ -53,6 +53,8 @@
         '';
 
       mstmSrc = mstm-src + "/december2023";
+
+      pyprojectVersion = (lib.importTOML ./pyproject.toml).project.version;
     in
     {
       packages = forEachSupportedSystem (
@@ -60,7 +62,7 @@
         let
           inherit (pkgs) stdenv;
         in
-        {
+        rec {
           mstm = stdenv.mkDerivation {
             pname = "mstm";
             version = "december2023";
@@ -76,6 +78,15 @@
               mkdir -p $out/bin
               cp mstm $out/bin/
             '';
+
+            meta = with lib; {
+              description = "Multiple Sphere T-Matrix code in Fortran (serial build, december2023 module layout)";
+              homepage = "https://github.com/dmckwski/MSTM";
+              license = licenses.mit;
+              platforms = platforms.unix;
+              maintainers = with maintainers; [ arunoruto ];
+              mainProgram = "mstm";
+            };
           };
 
           mstm-mpi = stdenv.mkDerivation {
@@ -93,21 +104,81 @@
               mkdir -p $out/bin
               cp mstm-mpi $out/bin/
             '';
+
+            meta = with lib; {
+              description = "Multiple Sphere T-Matrix code in Fortran (MPI-parallel build, december2023 module layout)";
+              homepage = "https://github.com/dmckwski/MSTM";
+              license = licenses.mit;
+              platforms = platforms.unix;
+              maintainers = with maintainers; [ arunoruto ];
+              mainProgram = "mstm-mpi";
+            };
           };
 
-          # Note: pyMSTM's Python extension (src/pymstm/_mstm_ext*.so) is no
-          # longer built as a Nix derivation (that was the ctypes-era
-          # libmstm.so, built from the now-deleted mstm_wrapper.f90). It's
-          # built by meson-python (see meson.build / pyproject.toml) against
-          # the local git submodule at external/mstm/ -- gfortran below
-          # covers the one system-level dependency that needs. Unlike
-          # devenv.nix, this plain flake shell doesn't run `uv sync`
-          # automatically -- run `uv sync --all-extras` once after entering
-          # (pulls in meson/ninja/meson-python from the `dev` extra; see
-          # pyproject.toml's [tool.uv] no-build-isolation-package comment
-          # for why those need to land in the persistent venv, not an
-          # ephemeral build env), then `import pymstm` rebuilds the
-          # extension automatically whenever its Fortran sources change.
+          # The Python bindings, as a real Nix derivation -- meson-python
+          # drives the exact same meson.build/tools/build_f2py_ext.py that
+          # `uv sync` triggers locally, so the compiled extension is the
+          # same numpy.f2py output either way.
+          #
+          # external/mstm is a git submodule, and Nix flakes only ever see
+          # a git-tracked copy of the flake's own source (via `self`) --
+          # a submodule's checked-out content is invisible to that copy
+          # (confirmed directly: `self`'s `external/mstm` doesn't even
+          # exist as a directory, since git records a submodule as a
+          # single gitlink entry, not the files inside it). Rather than
+          # fetch the source a second time, postPatch repopulates
+          # external/mstm from the *same* mstm-src input the CLI
+          # derivations above already use.
+          pymstm = pkgs.python3Packages.buildPythonPackage {
+            pname = "pymstm";
+            version = pyprojectVersion;
+            pyproject = true;
+            src = self;
+
+            postPatch = ''
+              rm -rf external/mstm
+              mkdir -p external
+              cp -r ${mstm-src} external/mstm
+              chmod -R u+w external/mstm
+            '';
+
+            # nixpkgs' meson-python setup hook pre-runs `meson setup` as
+            # its own configurePhase and hands `pypaBuildHook` a
+            # `-Cbuild-dir=` pointing at it -- on this nixpkgs/meson-python
+            # pairing that pre-configured dir confuses `python -m build`
+            # into treating the *build* dir as the source root ("Source
+            # .../build does not appear to be a Python project"). Skipping
+            # that pre-configure step lets meson-python's own build
+            # backend invoke meson itself from the real source root,
+            # which is its normal, fully self-contained mode of operation.
+            dontUseMesonConfigure = true;
+
+            build-system = [ pkgs.python3Packages.meson-python ];
+            nativeBuildInputs = [
+              pkgs.meson
+              pkgs.ninja
+              pkgs.gfortran
+              pkgs.gnupatch # applies the f2py-compatibility patches under src/pymstm/_fortran/patches/
+            ];
+            dependencies = [ pkgs.python3Packages.numpy ];
+
+            # The test suite cross-checks against the standalone `mstm`
+            # CLI binary (see the derivation above) and real MPI runs --
+            # neither is wired up as a build input here, so skip pytest
+            # during the Nix build; test.yml's CI job covers that.
+            doCheck = false;
+            pythonImportsCheck = [ "pymstm" ];
+
+            meta = with lib; {
+              description = "Python bindings for the MSTM (Multiple Sphere T-Matrix) Fortran library";
+              homepage = "https://github.com/arunoruto/pyMSTM";
+              license = licenses.mit;
+              platforms = platforms.unix;
+              maintainers = with maintainers; [ arunoruto ];
+            };
+          };
+
+          default = pymstm;
         }
       );
 
