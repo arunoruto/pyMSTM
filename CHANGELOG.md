@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.0.3 (2026-07-14)
+
+### Bug Fixes
+
+- Force f2py's meson backend, ruling out the manylinux_2_28 theory
+  ([`eb84751`](https://github.com/arunoruto/pyMSTM/commit/eb84751a6952cb4a1488a905cbf66c0b2c407a53))
+
+
 ## v1.0.2 (2026-07-14)
 
 ### Bug Fixes
