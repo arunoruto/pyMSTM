@@ -123,6 +123,13 @@ jobs:
           # target there and it doubles build time for no real benefit.
           CIBW_BUILD: "cp311-* cp312-* cp313-*"
           CIBW_SKIP: "*-musllinux*"
+          # cibuildwheel's own default architecture set for a Linux
+          # x86_64 runner also includes i686 (32-bit) -- confirmed via a
+          # real run: cp311/cp312/cp313 x86_64 wheels all built cleanly,
+          # then it moved on to cp311-manylinux_i686, where numpy has no
+          # prebuilt wheel, forcing a ~3+ minute from-source numpy build
+          # just to get started. Nobody needs 32-bit wheels for this.
+          CIBW_ARCHS_LINUX: "x86_64"
           CIBW_ARCHS_MACOS: "auto"
           CIBW_BUILD_VERBOSITY: "1"
           # manylinux images are AlmaLinux/CentOS-based -- gcc-gfortran is
