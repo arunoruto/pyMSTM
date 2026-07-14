@@ -119,12 +119,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Fortran/f2py extension -- Windows needs a whole separate
-        # MinGW/gfortran toolchain story we haven't set up, and Linux
-        # aarch64 would mean QEMU-emulated compiles (slow, fragile for a
-        # first pass) -- both left as a follow-up. macOS covers both
-        # Intel (macos-13) and Apple Silicon (macos-14) natively.
-        os: [ubuntu-latest, macos-13, macos-14]
+        # Linux only for now, deliberately -- macos-13/macos-14 legs
+        # both failed on the first real release run (macOS: Homebrew's
+        # latest gfortran links libgfortran/libquadmath requiring macOS
+        # 14+, tripping delocate-wheel's deployment-target check; see
+        # the CIBW_BEFORE_ALL_MACOS/CIBW_ENVIRONMENT_MACOS comments
+        # below for the fix, prepared but not yet re-verified end to
+        # end) -- narrowing to Linux avoids burning macOS runner minutes
+        # on repeated iterations while that's still being sorted out.
+        # Windows needs a whole separate MinGW/gfortran toolchain story,
+        # and Linux aarch64 would mean QEMU-emulated compiles (slow,
+        # fragile for a first pass) -- both left as a follow-up too.
+        os: [ubuntu-latest]
 
     steps:
       - name: Setup | Checkout Repository at Release Tag
@@ -146,14 +152,22 @@ jobs:
           # manylinux images are AlmaLinux/CentOS-based -- gcc-gfortran is
           # in the base repos on both manylinux2014 and manylinux_2_28.
           CIBW_BEFORE_ALL_LINUX: "yum install -y gcc-gfortran"
-          # Homebrew's gcc formula ships gfortran under a versioned name
-          # (gfortran-14, gfortran-15, ...) that drifts over time -- glob
-          # for whatever got installed instead of hardcoding a version.
-          CIBW_BEFORE_ALL_MACOS: |
-            brew install gcc
-            GFORTRAN=$(find $(brew --prefix)/bin -name 'gfortran-*' | sort -V | tail -1)
-            ln -sf "$GFORTRAN" $(brew --prefix)/bin/gfortran
-          CIBW_ENVIRONMENT_MACOS: "FC=gfortran"
+          # No CIBW_BEFORE_ALL_MACOS `brew install gcc` -- GitHub's macOS
+          # runner images ship gfortran-13/14/15 pre-installed (see
+          # actions/runner-images' own macos-14-arm64-Readme.md), and
+          # NumPy's own wheels.yml uses exactly this pinned-version
+          # approach (`FC=gfortran-13`, no brew install at all) rather
+          # than installing Homebrew's *latest* gcc fresh. That distinction
+          # matters here, not just for speed: the first real run's macOS
+          # legs failed because a freshly `brew install`ed gcc links
+          # libgfortran/libquadmath requiring macOS 14+, which
+          # delocate-wheel then refuses to repair for an 11.0-targeted
+          # wheel -- the older, pre-installed gfortran-13 doesn't have
+          # that mismatch. Not yet re-verified end to end (matrix is
+          # Linux-only above until that's settled) -- prepared so macOS
+          # can be re-added with a real fix instead of the guess that
+          # failed the first time.
+          CIBW_ENVIRONMENT_MACOS: "FC=gfortran-13"
           # Smoke test: actually import and run a tiny solve inside the
           # built wheel (in an isolated venv cibuildwheel creates), not
           # just an import check -- catches a wheel that imports fine but
