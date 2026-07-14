@@ -2,17 +2,25 @@ name: Wheels
 
 # Single source of truth for *how* pyMSTM's wheels + sdist are built.
 #
-# Deliberately NOT triggered on every PR push -- cibuildwheel across
-# cp311-cp314 is slow enough that running it on every commit during
-# iteration isn't worth it. Runs instead:
-#   - On push to main: keeps main continuously proven buildable, so a
-#     release tag is only ever cut for a commit that's already known good.
-#   - On demand, on a PR, via either `workflow_dispatch` (Actions tab, or
-#     `gh workflow run wheels.yml --ref <branch>`) or commenting
-#     `/build-wheels` on the PR -- run either right before merging once
-#     you're satisfied, instead of on every push.
-#   - Called by publish.yml (workflow_call) with the freshly-created tag:
-#     the same build, whose artifacts publish.yml then ships to PyPI.
+# Deliberately not triggered automatically at all (no PR push, no push to
+# main) -- cibuildwheel across cp311-cp314 is slow enough, and this
+# project small/quiet enough, that it isn't worth building on every
+# commit or every merge. Runs on demand instead:
+#   - workflow_dispatch: Actions tab, or `gh workflow run wheels.yml --ref
+#     <branch>` -- run manually whenever you actually want to validate a
+#     build (e.g. right before merging a PR you're unsure about).
+#   - Commenting `/build-wheels` on a PR.
+#   - Called by publish.yml (workflow_call) with the freshly-created tag
+#     at actual release time.
+#
+# Tradeoff worth knowing: publish.yml's `release` job tags before this
+# workflow ever builds anything (tag-first), so if a release's build
+# fails here, the tag/GitHub Release already exist -- a phantom release
+# with no wheels, needing manual cleanup (`gh release delete <tag>
+# --cleanup-tag`). Dropping the old push-to-main validation removed the
+# "main is continuously proven buildable" backstop that made that
+# unlikely; the mitigation now is manual -- run workflow_dispatch or
+# `/build-wheels` on a PR you're unsure about before merging/releasing.
 #
 # All cibuildwheel configuration lives in pyproject.toml's
 # [tool.cibuildwheel] -- deliberately not here as CIBW_* env vars, so this
@@ -36,8 +44,6 @@ on:
         default: ""
   issue_comment:
     types: [created]
-  push:
-    branches: [main]
 
 permissions:
   contents: read
@@ -121,7 +127,7 @@ jobs:
         with:
           # check_comment's resolved SHA on a /build-wheels comment;
           # inputs.ref on workflow_call/workflow_dispatch (empty checks
-          # out the triggering commit, e.g. on push to main).
+          # out whatever ref the dispatch/call itself targeted).
           ref: ${{ needs.check_comment.outputs.sha || inputs.ref }}
           submodules: recursive
 
