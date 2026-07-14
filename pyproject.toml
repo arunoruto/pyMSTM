@@ -52,6 +52,21 @@ build_command = """
 [tool.semantic_release.branches.main]
 match = "main"
 
+[tool.cibuildwheel.linux]
+# cibuildwheel's default manylinux2014 image is CentOS 7 / GCC 10 (via
+# devtoolset-10) -- confirmed via a real failed release run that this
+# combination segfaults (SIGSEGV, exit 139) deep inside a two-sphere
+# MSTM solve that runs correctly everywhere else tried (local dev
+# environment, a plain `nix build`). manylinux2014's compile log for
+# this same file already shows several "may be used uninitialized"
+# warnings around array bounds in mstm-input-37.f90 -- real latent UB
+# in the legacy Fortran that an old GCC/glibc combination is more
+# likely to turn into an actual crash than a newer one. NumPy's own
+# pyproject.toml overrides this exact default to manylinux_2_28 (AlmaLinux
+# 8, a much newer GCC) for what looks like the same class of reason --
+# matching that precedent rather than guessing at compiler flags blind.
+manylinux-x86_64-image = "manylinux_2_28"
+
 [tool.uv]
 # meson-python's editable-install loader hardcodes the absolute path to
 # `ninja` (and the meson build dir) that it saw *during the build* into
