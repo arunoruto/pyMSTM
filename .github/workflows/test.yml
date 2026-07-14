@@ -24,10 +24,26 @@ jobs:
           enable-cache: true
       - name: Install dependencies (builds the f2py extension)
         run: uv sync --extra dev
+      - name: Cache | MSTM CLI reference binary
+        id: cache-cli
+        uses: actions/cache@v4
+        with:
+          path: build/mstm
+          # external/mstm is a git submodule pinned to a fixed commit in
+          # .gitmodules -- it essentially never changes between runs, so
+          # hashing its checked-out content (plus the Makefile that
+          # compiles it) is a reliable "did the CLI's own inputs change"
+          # key, letting most runs skip recompiling it entirely.
+          key: ${{ runner.os }}-mstm-cli-${{ hashFiles('external/mstm/december2023/**', 'Makefile') }}
+
       - name: Build the standalone MSTM CLI reference binary
         # test_compatibility.py skips itself if this isn't present -- but
         # we want that cross-check to actually run in CI, not silently
-        # skip.
+        # skip. Skipped entirely on a cache hit above -- `make`'s own
+        # mtime-based staleness check isn't reliable here since a fresh
+        # checkout + cache restore don't produce trustworthy relative
+        # timestamps between sources and the cached binary.
+        if: steps.cache-cli.outputs.cache-hit != 'true'
         run: make cli
       - name: Test with pytest
         run: uv run pytest tests/ -v
