@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.0.4 (2026-07-14)
+
+### Bug Fixes
+
+- Document that published wheels don't cover cp39 yet
+  ([`7bdcbc2`](https://github.com/arunoruto/pyMSTM/commit/7bdcbc244d62a6276dc66bc26fc0af2d9986ea06))
+
+
 ## v1.0.3 (2026-07-14)
 
 ### Bug Fixes

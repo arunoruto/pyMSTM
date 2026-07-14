@@ -1,6 +1,6 @@
 [project]
 name = "pymstm"
-version = "1.0.3"
+version = "1.0.4"
 description = "Python bindings for the MSTM (Multiple Sphere T-Matrix) Fortran library"
 readme = "README.md"
 # NOTE: published wheels currently only cover cp310-cp313 -- cp39 is
