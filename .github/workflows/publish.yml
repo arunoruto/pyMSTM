@@ -38,8 +38,16 @@ jobs:
 
       - name: Evaluate | Compute next version without tagging
         id: compute
+        # Reading the current version via `grep -P` (PCRE lookbehind)
+        # failed outright on this runner -- confirmed by the job log
+        # showing zero output and aborting within ~0.1s, far too fast
+        # for semantic-release to have even started, meaning the grep
+        # itself was the failure. Python's tomllib is already available
+        # (Python 3.11+, which every runner here has) and is a proper
+        # TOML parser rather than a regex guessing at TOML's grammar --
+        # more robust than chasing whatever made -P misbehave here.
         run: |
-          CURRENT="$(grep -Po '(?<=^version = ")[^"]+' pyproject.toml)"
+          CURRENT="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
           NEXT="$(uv run semantic-release version --print 2>/dev/null)"
           echo "Current version: $CURRENT"
           echo "Next version:    $NEXT"
