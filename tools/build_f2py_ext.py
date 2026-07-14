@@ -29,8 +29,15 @@ def main():
     sources = [os.path.abspath(s) for s in sys.argv[3:]]
 
     env = dict(os.environ)
-    ldflags = "-Wl,-z,noexecstack"
-    env["LDFLAGS"] = f"{env['LDFLAGS']} {ldflags}" if env.get("LDFLAGS") else ldflags
+    # -z noexecstack is a GNU ld (ELF) hardening flag with no equivalent
+    # meaning on macOS's Mach-O linker, which doesn't understand -z at
+    # all and aborts with "unknown options: -z" -- Linux-only. Never
+    # caught before because this extension was never actually built on
+    # macOS until cibuildwheel's macOS legs (see .github/workflows/
+    # publish.yml) tried it for the first time.
+    if sys.platform.startswith("linux"):
+        ldflags = "-Wl,-z,noexecstack"
+        env["LDFLAGS"] = f"{env['LDFLAGS']} {ldflags}" if env.get("LDFLAGS") else ldflags
 
     with tempfile.TemporaryDirectory() as scratch:
         cmd = [

@@ -158,9 +158,16 @@ jobs:
           # built wheel (in an isolated venv cibuildwheel creates), not
           # just an import check -- catches a wheel that imports fine but
           # is missing/mislinked its compiled extension.
+          #
+          # `import pymstm;` MUST stay on the same source line as the
+          # opening quote below -- YAML's `>` folding replaces every line
+          # break with a single space, so a break right after `python -c
+          # "` folds into a *leading space inside the quoted string*
+          # (`python -c " import pymstm; ...`), and `python -c` raises
+          # IndentationError: unexpected indent on any leading whitespace
+          # in top-level exec'd code. Confirmed via a real failed run.
           CIBW_TEST_COMMAND: >
-            python -c "
-            import pymstm;
+            python -c "import pymstm;
             m = pymstm.MSTM();
             m.set_spheres(radii=[1.0,1.0], positions=[[-1.5,0,0],[1.5,0,0]], orders=[6,6], ref_re=[1.5,1.5], ref_im=[0.01,0.01]);
             m.set_medium_ref(1.0, 0.0);
@@ -170,8 +177,7 @@ jobs:
             m.prepare();
             r = m.solve();
             m.finalize();
-            assert r['qext_tot'] > 0
-            "
+            assert r['qext_tot'] > 0"
 
       - uses: actions/upload-artifact@v4
         with:
