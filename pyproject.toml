@@ -1,6 +1,6 @@
 [project]
 name = "pymstm"
-version = "1.0.1"
+version = "1.0.2"
 description = "Python bindings for the MSTM (Multiple Sphere T-Matrix) Fortran library"
 readme = "README.md"
 requires-python = ">=3.9"
