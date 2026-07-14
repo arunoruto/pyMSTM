@@ -1,5 +1,16 @@
 name: Continuous Delivery
 
+# Tag-first release. semantic-release decides the version and creates the
+# tag + GitHub Release; the same commit's wheels then build (via the
+# reusable wheels.yml) and publish to PyPI. Because wheels.yml also runs
+# on every PR/push to main, a release is only ever cut for a commit whose
+# wheels have already built green -- so tag-first stays safe without the
+# build-before-tag machinery this pipeline used to carry.
+#
+# NOTE: the filename `publish.yml` is load-bearing -- the PyPI trusted
+# publisher for `pymstm` is configured against this exact workflow file.
+# The job that calls pypa/gh-action-pypi-publish must stay in here.
+
 on:
   workflow_dispatch:
 
@@ -7,329 +18,79 @@ permissions:
   contents: read
 
 jobs:
-  testing:
+  test:
     uses: ./.github/workflows/test.yml
 
-  determine-version:
-    name: Determine next version (no side effects yet)
-    runs-on: ubuntu-latest
-    needs:
-      - testing
-    outputs:
-      released: ${{ steps.compute.outputs.released }}
-      version: ${{ steps.compute.outputs.version }}
-    steps:
-      - name: Setup | Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup | Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Setup | Install python-semantic-release only
-        # --no-install-project: this job only ever calls `semantic-release
-        # version --print`, a pure dry run that never touches
-        # build_command -- unlike the real `release` job below, it never
-        # needs pymstm itself built, so it can skip gfortran entirely
-        # (confirmed locally: --print works fine against just the `build`
-        # extra's own deps).
-        run: uv sync --extra build --no-install-project
-
-      - name: Evaluate | Compute next version without tagging
-        id: compute
-        # `uv run <cmd>` implicitly re-syncs the venv first by default,
-        # regardless of an earlier separate `uv sync --no-install-project`
-        # -- that implicit sync doesn't inherit --no-install-project, so
-        # it tries to build/install pymstm itself again, which needs
-        # gfortran (deliberately not installed in this job, see the
-        # step above). That failure was hidden by this step's own
-        # `2>/dev/null` on the semantic-release line, so it looked like
-        # total silence rather than a build error -- confirmed locally:
-        # reproducible without --no-sync, gone with it. --no-sync trusts
-        # the venv exactly as the earlier `uv sync --no-install-project`
-        # left it.
-        run: |
-          CURRENT="$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
-          NEXT="$(uv run --no-sync semantic-release version --print 2>/dev/null)"
-          echo "Current version: $CURRENT"
-          echo "Next version:    $NEXT"
-          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
-          if [ "$NEXT" != "$CURRENT" ]; then
-            echo "released=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "released=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  build_wheels:
-    name: Build wheels on ${{ matrix.os }}
-    needs:
-      - determine-version
-    if: needs.determine-version.outputs.released == 'true'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # Linux only for now, deliberately -- macos-13/macos-14 legs
-        # both failed on the first real release run (macOS: Homebrew's
-        # latest gfortran links libgfortran/libquadmath requiring macOS
-        # 14+, tripping delocate-wheel's deployment-target check; see
-        # the CIBW_ENVIRONMENT_MACOS comment below for the fix, prepared
-        # but not yet re-verified end to end) -- narrowing to Linux
-        # avoids burning macOS runner minutes on repeated iterations
-        # while that's still being sorted out. Windows needs a whole
-        # separate MinGW/gfortran toolchain story, and Linux aarch64
-        # would mean QEMU-emulated compiles (slow, fragile for a first
-        # pass) -- both left as a follow-up too.
-        os: [ubuntu-latest]
-
-    steps:
-      - name: Setup | Checkout Repository
-        # No tag exists yet at this point -- that's the whole point of
-        # this reordering (see determine-version/release comments below).
-        # github.sha is fixed for the entire workflow run, so this and
-        # every other job here build from the exact same commit
-        # determine-version already computed a version for for.
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup | Stamp the version determine-version computed
-        # No tag/commit exists for this version yet -- release (below)
-        # only creates one once these wheels are confirmed good. Patch
-        # the version strings locally (uncommitted, this checkout is
-        # thrown away after the job) purely so the wheel filenames and
-        # METADATA carry the version that *will* be tagged, instead of
-        # whatever version.toml/`__init__.py` still say on plain main.
-        run: |
-          sed -i 's/^version = ".*"/version = "${{ needs.determine-version.outputs.version }}"/' pyproject.toml
-          sed -i 's/^__version__ = ".*"/__version__ = "${{ needs.determine-version.outputs.version }}"/' src/pymstm/__init__.py
-
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v2.21
-        env:
-          # cp39/cp310 dropped for good (see pyproject.toml's
-          # requires-python comment) -- two independent, real cibuildwheel
-          # failures below cp311: cp39 segfaulted (SIGSEGV) deep in a
-          # two-sphere solve (ruled out compiler version and f2py's
-          # legacy distutils backend as causes, both survived); cp310
-          # crashed earlier, during the f2py build itself (KeyError:
-          # 'void' in numpy's own crackfortran). Both are the only builds
-          # resolving a numpy old enough to hit these, and both Python
-          # versions are in their final year of upstream support anyway
-          # -- not worth separately chasing two legacy-numpy-version bugs
-          # for them.
-          # PyPy/musllinux skipped -- Fortran extensions aren't a realistic
-          # target there and it doubles build time for no real benefit.
-          CIBW_BUILD: "cp311-* cp312-* cp313-*"
-          CIBW_SKIP: "*-musllinux*"
-          # cibuildwheel's own default architecture set for a Linux
-          # x86_64 runner also includes i686 (32-bit) -- confirmed via a
-          # real run: cp311/cp312/cp313 x86_64 wheels all built cleanly,
-          # then it moved on to cp311-manylinux_i686, where numpy has no
-          # prebuilt wheel, forcing a ~3+ minute from-source numpy build
-          # just to get started. Nobody needs 32-bit wheels for this.
-          CIBW_ARCHS_LINUX: "x86_64"
-          CIBW_ARCHS_MACOS: "auto"
-          CIBW_BUILD_VERBOSITY: "1"
-          # manylinux images are AlmaLinux/CentOS-based -- gcc-gfortran is
-          # in the base repos on both manylinux2014 and manylinux_2_28.
-          CIBW_BEFORE_ALL_LINUX: "yum install -y gcc-gfortran"
-          # No CIBW_BEFORE_ALL_MACOS `brew install gcc` -- GitHub's macOS
-          # runner images ship gfortran-13/14/15 pre-installed (see
-          # actions/runner-images' own macos-14-arm64-Readme.md), and
-          # NumPy's own wheels.yml uses exactly this pinned-version
-          # approach (`FC=gfortran-13`, no brew install at all) rather
-          # than installing Homebrew's *latest* gcc fresh. That distinction
-          # matters here, not just for speed: the first real run's macOS
-          # legs failed because a freshly `brew install`ed gcc links
-          # libgfortran/libquadmath requiring macOS 14+, which
-          # delocate-wheel then refuses to repair for an 11.0-targeted
-          # wheel -- the older, pre-installed gfortran-13 doesn't have
-          # that mismatch. Not yet re-verified end to end (matrix is
-          # Linux-only above until that's settled) -- prepared so macOS
-          # can be re-added with a real fix instead of the guess that
-          # failed the first time.
-          CIBW_ENVIRONMENT_MACOS: "FC=gfortran-13"
-          # Smoke test: actually import and run a tiny solve inside the
-          # built wheel (in an isolated venv cibuildwheel creates), not
-          # just an import check -- catches a wheel that imports fine but
-          # is missing/mislinked its compiled extension.
-          #
-          # `import pymstm;` MUST stay on the same source line as the
-          # opening quote below -- YAML's `>` folding replaces every line
-          # break with a single space, so a break right after `python -c
-          # "` folds into a *leading space inside the quoted string*
-          # (`python -c " import pymstm; ...`), and `python -c` raises
-          # IndentationError: unexpected indent on any leading whitespace
-          # in top-level exec'd code. Confirmed via a real failed run.
-          CIBW_TEST_COMMAND: >
-            python -c "import pymstm;
-            m = pymstm.MSTM();
-            m.set_spheres(radii=[1.0,1.0], positions=[[-1.5,0,0],[1.5,0,0]], orders=[6,6], ref_re=[1.5,1.5], ref_im=[0.01,0.01]);
-            m.set_medium_ref(1.0, 0.0);
-            m.set_incident(alpha_deg=0.0, beta_deg=0.0);
-            m.set_solver_params(eps=1e-3, max_iter=200);
-            m.set_verbose(False);
-            m.prepare();
-            r = m.solve();
-            m.finalize();
-            assert r['qext_tot'] > 0"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wheels-${{ matrix.os }}
-          path: ./wheelhouse/*.whl
-
   release:
-    name: Tag and create the GitHub Release (wheels already verified)
+    name: Version, tag, and create the GitHub Release
     runs-on: ubuntu-latest
-    needs:
-      - determine-version
-      - build_wheels
-
+    needs: test
     concurrency:
       group: ${{ github.workflow }}-release-${{ github.ref_name }}
       cancel-in-progress: false
     permissions:
       contents: write
-
     outputs:
       released: ${{ steps.release.outputs.released }}
       tag: ${{ steps.release.outputs.tag }}
-      version: ${{ steps.release.outputs.version }}
-
     steps:
       - name: Setup | Checkout Repository on Release Branch
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
-          submodules: recursive
+          # No submodules: this job only versions/tags/releases, it never
+          # builds the extension. Wheels build in wheels.yml (with
+          # submodules), from the tag this job creates.
 
       - name: Setup | Force release branch to be at workflow sha
         run: git reset --hard ${{ github.sha }}
 
-      - name: Setup | Install gfortran
-        # `uv sync` also builds/installs pymstm itself (not just the
-        # `build` extra's own deps), and pyproject.toml's
-        # no-build-isolation-package = ["pymstm"] means that build needs
-        # gfortran and meson-python already present in *this* venv --
-        # same reason test.yml installs it before syncing.
-        run: sudo apt-get update && sudo apt-get install -y gfortran
-
-      - name: Setup | Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Setup | Install build dependencies
-        # `build-ext` for meson/ninja/meson-python (needed to build
-        # pymstm itself, see gfortran step above) without pytest/
-        # pytest-cov along for the ride -- this job never runs the test
-        # suite, that's test.yml's job. `build` for
-        # python-semantic-release.
-        run: uv sync --extra build --extra build-ext
-
-      - name: Evaluate | Verify upstream has NOT changed
-        # Wheels take a while to build -- more important here than it
-        # was before this job moved to run last, since there's now a
-        # longer window for main to have drifted between our checkout
-        # above and the push below.
-        shell: bash
-        run: |
-          set +o pipefail
-
-          UPSTREAM_BRANCH_NAME="$(git status -sb | head -n 1 | cut -d' ' -f2 | grep -E '\.{3}' | cut -d'.' -f4)"
-          printf '%s\n' "Upstream branch name: $UPSTREAM_BRANCH_NAME"
-
-          set -o pipefail
-
-          if [ -z "$UPSTREAM_BRANCH_NAME" ]; then
-              printf >&2 '%s\n' "::error::Unable to determine upstream branch name!"
-              exit 1
-          fi
-
-          git fetch "${UPSTREAM_BRANCH_NAME%%/*}"
-
-          if ! UPSTREAM_SHA="$(git rev-parse "$UPSTREAM_BRANCH_NAME")"; then
-              printf >&2 '%s\n' "::error::Unable to determine upstream branch sha!"
-              exit 1
-          fi
-
-          HEAD_SHA="$(git rev-parse HEAD)"
-
-          if [ "$HEAD_SHA" != "$UPSTREAM_SHA" ]; then
-              printf >&2 '%s\n' "[HEAD SHA] $HEAD_SHA != $UPSTREAM_SHA [UPSTREAM SHA]"
-              printf >&2 '%s\n' "::error::Upstream has changed, aborting release..."
-              exit 1
-          fi
-
-          printf '%s\n' "Verified upstream branch has not changed, continuing with release..."
-
       - name: Action | Semantic Version Release
-        # Bumps pyproject.toml/src/pymstm/__init__.py's version, builds
-        # the sdist (build_command below), commits, tags, pushes, and
-        # creates the GitHub Release (sdist attached as an asset) --
-        # only reached after build_wheels has already succeeded, so
-        # (unlike the very first version of this pipeline) a tag/release
-        # only ever gets created once we already know real wheels exist
-        # for it. Recomputes the same version determine-version already
-        # printed (nothing has changed the commit history since), so the
-        # wheels build_wheels already built and stamped stay correct.
+        # Computes the next version from Conventional Commits, bumps
+        # pyproject.toml + __init__.py (per [tool.semantic_release]),
+        # commits, tags, pushes, and creates the GitHub Release.
         id: release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@users.noreply.github.com"
-          uv run semantic-release -v version
+        uses: python-semantic-release/python-semantic-release@v10.6.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          git_committer_name: "github-actions"
+          git_committer_email: "actions@users.noreply.github.com"
 
-      - name: Publish | Upload sdist to GitHub Release Assets
-        if: steps.release.outputs.released == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: uv run semantic-release publish
+  wheels:
+    # Build the wheels + sdist for the tag release just created. Reuses
+    # the exact same build that validated on the PR.
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    uses: ./.github/workflows/wheels.yml
+    with:
+      ref: ${{ needs.release.outputs.tag }}
 
   publish:
-    name: Publish to PyPI and attach wheels to the GitHub Release
+    name: Publish to PyPI and attach artifacts to the GitHub Release
+    runs-on: ubuntu-latest
     needs:
       - release
-      - build_wheels
-    runs-on: ubuntu-latest
-
+      - wheels
+    if: needs.release.outputs.released == 'true'
     environment:
       name: pypi
       url: https://pypi.org/p/pymstm
     permissions:
-      id-token: write
-      contents: write
-
+      id-token: write # PyPI trusted publishing (OIDC)
+      contents: write # attach assets to the GitHub Release
     steps:
-      - name: Download all wheels
+      - name: Download | All build artifacts (wheels + sdist)
         uses: actions/download-artifact@v4
         with:
-          pattern: wheels-*
+          pattern: cibw-*
           path: dist
           merge-multiple: true
 
-      - name: Download sdist from the GitHub Release
+      - name: Publish | PyPI (trusted publishing, no token)
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Publish | Attach wheels + sdist to the GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release download ${{ needs.release.outputs.tag }} \
-            --repo ${{ github.repository }} \
-            --pattern '*.tar.gz' \
-            --dir dist
-
-      - name: Publish | Upload wheels to GitHub Release Assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload ${{ needs.release.outputs.tag }} dist/*.whl \
-            --repo ${{ github.repository }} \
-            --clobber
-
-      - name: Setup | Install uv
-        uses: astral-sh/setup-uv@v4
-
-      - name: Publish | Publish to PyPI
-        run: uv publish dist/*
+        run: gh release upload ${{ needs.release.outputs.tag }} dist/* --repo ${{ github.repository }} --clobber
