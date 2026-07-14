@@ -50,10 +50,12 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Setup | Install build dependencies
-        # `dev` for meson/ninja/meson-python (needed to build pymstm
-        # itself, see gfortran step above); `build` for
+        # `build-ext` for meson/ninja/meson-python (needed to build
+        # pymstm itself, see gfortran step above) without pytest/
+        # pytest-cov along for the ride -- this job never runs the test
+        # suite, that's test.yml's job. `build` for
         # python-semantic-release.
-        run: uv sync --extra build --extra dev
+        run: uv sync --extra build --extra build-ext
 
       - name: Evaluate | Verify upstream has NOT changed
         shell: bash

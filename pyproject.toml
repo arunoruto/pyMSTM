@@ -18,7 +18,12 @@ classifiers = [
 dependencies = ["numpy>=1.25"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "pytest-cov", "meson>=1.1", "ninja", "meson-python>=0.15"]
+# Split out from `dev` so publish.yml's release job (which only needs to
+# build pymstm itself, per no-build-isolation-package below -- it never
+# runs the test suite) can pull in just the compiler tooling without
+# pytest/pytest-cov along for the ride.
+build-ext = ["meson>=1.1", "ninja", "meson-python>=0.15"]
+dev = ["pytest>=7", "pytest-cov", "pymstm[build-ext]"]
 dashboard = ["streamlit>=1.28", "pandas>=2.0", "plotly>=5.0", "pydantic>=2.0", "tomli>=2.0; python_version < '3.11'"]
 build = ["python-semantic-release ~= 10.0"]
 

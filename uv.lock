@@ -2142,6 +2142,11 @@ dependencies = [
 build = [
     { name = "python-semantic-release" },
 ]
+build-ext = [
+    { name = "meson" },
+    { name = "meson-python" },
+    { name = "ninja" },
+]
 dashboard = [
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -2162,20 +2167,21 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "meson", marker = "extra == 'dev'", specifier = ">=1.1" },
-    { name = "meson-python", marker = "extra == 'dev'", specifier = ">=0.15" },
-    { name = "ninja", marker = "extra == 'dev'" },
+    { name = "meson", marker = "extra == 'build-ext'", specifier = ">=1.1" },
+    { name = "meson-python", marker = "extra == 'build-ext'", specifier = ">=0.15" },
+    { name = "ninja", marker = "extra == 'build-ext'" },
     { name = "numpy", specifier = ">=1.25" },
     { name = "pandas", marker = "extra == 'dashboard'", specifier = ">=2.0" },
     { name = "plotly", marker = "extra == 'dashboard'", specifier = ">=5.0" },
     { name = "pydantic", marker = "extra == 'dashboard'", specifier = ">=2.0" },
+    { name = "pymstm", extras = ["build-ext"], marker = "extra == 'dev'" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "python-semantic-release", marker = "extra == 'build'", specifier = "~=10.0" },
     { name = "streamlit", marker = "extra == 'dashboard'", specifier = ">=1.28" },
     { name = "tomli", marker = "python_full_version < '3.11' and extra == 'dashboard'", specifier = ">=2.0" },
 ]
-provides-extras = ["dev", "dashboard", "build"]
+provides-extras = ["build-ext", "dev", "dashboard", "build"]
 
 [[package]]
 name = "pyproject-metadata"
