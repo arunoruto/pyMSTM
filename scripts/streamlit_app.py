@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 import tempfile
+import tomllib
 import uuid
 from pathlib import Path
 
@@ -104,10 +104,6 @@ def _default_sweep_config() -> SweepConfig:
 
 def _apply_toml(raw: str) -> SweepConfig | None:
     """Parse TOML into a SweepConfig, returning None on failure."""
-    if sys.version_info >= (3, 11):
-        import tomllib
-    else:
-        import tomli as tomllib
     try:
         data = tomllib.loads(raw)
         return SweepConfig(**data)

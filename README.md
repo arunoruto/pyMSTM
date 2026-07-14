@@ -53,7 +53,7 @@ pip install -e .
 
 ## Requirements
 
-- Python >= 3.9
+- Python >= 3.11
 - NumPy >= 1.25
 - gfortran (GCC)
 

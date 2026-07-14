@@ -32,17 +32,12 @@ Example
 from __future__ import annotations
 
 import os
-import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from pydantic import BaseModel, Field, model_validator
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib  # type: ignore[no-redef]
 
 
 # ---------------------------------------------------------------------------

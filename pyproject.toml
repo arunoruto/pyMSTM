@@ -3,13 +3,18 @@ name = "pymstm"
 version = "1.0.4"
 description = "Python bindings for the MSTM (Multiple Sphere T-Matrix) Fortran library"
 readme = "README.md"
-# NOTE: published wheels currently only cover cp310-cp313 -- cp39 is
-# temporarily excluded from .github/workflows/publish.yml's CIBW_BUILD
-# (see that file's comment) pending investigation of a segfault
-# reproducible only on that specific build. A Python 3.9 user can still
-# install from the sdist if they have a working gfortran/meson toolchain
-# locally, but has no prebuilt wheel to fall back on right now.
-requires-python = ">=3.9"
+# Raised from >=3.9 after two independent, real cibuildwheel failures
+# below cp311: cp39 segfaults (SIGSEGV) deep in a two-sphere solve --
+# ruled out compiler version and f2py's legacy distutils backend as
+# causes, both survived; cp310 crashes earlier, during the f2py build
+# itself (KeyError: 'void' in numpy's own crackfortran, generating
+# module hooks for a derived-type array it can't map to a C type).
+# cibuildwheel stops at the first failure, so cp311+ has never actually
+# been reached yet -- but rather than separately chase two different
+# legacy-numpy-version bugs for Python versions in their final year of
+# upstream support anyway, dropping the floor to what CIBW_BUILD in
+# .github/workflows/publish.yml now actually targets (cp311-cp313).
+requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "pymstm contributors" }]
@@ -30,7 +35,7 @@ dependencies = ["numpy>=1.25"]
 # pytest/pytest-cov along for the ride.
 build-ext = ["meson>=1.1", "ninja", "meson-python>=0.15"]
 dev = ["pytest>=7", "pytest-cov", "pymstm[build-ext]"]
-dashboard = ["streamlit>=1.28", "pandas>=2.0", "plotly>=5.0", "pydantic>=2.0", "tomli>=2.0; python_version < '3.11'"]
+dashboard = ["streamlit>=1.28", "pandas>=2.0", "plotly>=5.0", "pydantic>=2.0"]
 build = ["python-semantic-release ~= 10.0"]
 
 [project.urls]
