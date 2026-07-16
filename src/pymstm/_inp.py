@@ -51,6 +51,8 @@ def write_inp_file(
     max_tmatrix_order: int = 100,
     tmatrix_convergence_eps: float = 1e-6,
     calculate_scattering_matrix: bool = True,
+    scattering_map_dimension: int | None = None,
+    normalize_s11: bool = True,
     azimuthal_average: bool = False,
     print_sphere_data: bool = True,
     output_file: str = "mstm_output.dat",
@@ -131,6 +133,31 @@ def write_inp_file(
     # Scattering matrix
     lines.append("calculate_scattering_matrix")
     lines.append("t" if calculate_scattering_matrix else "f")
+    if not normalize_s11:
+        # Defaults to true in MSTM itself -- S11 normalized so its own
+        # angular integral works out to a fixed convention, not a raw
+        # cross section. get_scattering_angle() (the f2py binding path)
+        # and FaSTMM2 both report *unnormalized* S11 -- confirmed a large
+        # magnitude mismatch against get_scattering_angle() on an
+        # identical case before setting this to false. Setting it to
+        # false brings the *shape* into line at every angle, but leaves a
+        # residual, exactly-constant 2*pi factor across the board -- this
+        # .inp text path has no further "true unnormalized" mode to
+        # request, so callers wanting an exact match to
+        # get_scattering_angle()'s convention need to divide that factor
+        # back out themselves (see t-bench's mstm_cli.py adapter for
+        # where that's done).
+        lines.append("normalize_s11")
+        lines.append("f")
+    if scattering_map_dimension is not None:
+        # NOTE: confirmed this has no effect on the "scattering matrix in
+        # incident plane" text table parse_mstm_output() reads (fixed
+        # -180..180deg, 361 points at 1deg resolution regardless of this
+        # value) -- exposed anyway since it's a real .inp keyword that
+        # may matter for other output modes (e.g. random-orientation
+        # runs) not yet exercised by any caller here.
+        lines.append("scattering_map_dimension")
+        lines.append(str(scattering_map_dimension))
 
     if azimuthal_average:
         lines.append("azimuthal_average")
