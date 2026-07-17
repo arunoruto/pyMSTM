@@ -76,8 +76,15 @@ class MSTM:
         positions : array-like, shape (n, 3)
             Sphere center positions (x, y, z).
         orders : array-like, shape (n,)
-            Mie expansion order for each sphere. A good default is
-            max(4, int(x + 4*x**(1/3) + 2)) where x is the size parameter.
+            Advisory per-sphere Mie expansion order used only to size the
+            internal allocation -- it does *not* govern the truncation of
+            the result. The actual per-sphere truncation is controlled by
+            ``mie_epsilon`` (``set_mie_eps``): a positive value is an
+            adaptive convergence tolerance, a negative value a fixed number
+            of orders. (Confirmed empirically: at a fixed ``mie_epsilon``,
+            the cross sections are identical whether ``orders`` is 4 or 12.)
+            ``max(4, int(x + 4*x**(1/3) + 2))`` where x is the size
+            parameter is a reasonable value to pass.
         ref_re : array-like, shape (n,)
             Real part of refractive index for each sphere.
         ref_im : array-like, shape (n,)
