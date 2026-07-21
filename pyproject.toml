@@ -25,7 +25,17 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Fortran",
 ]
-dependencies = ["numpy>=1.25"]
+dependencies = [
+  "numpy>=1.25",
+  # Was a "dashboard"-only extra until _inp_parser.py's pydantic models
+  # became a hard import of _cli.py (run_mstm()'s output-filename
+  # introspection) and _solver.py (MstmProblem) -- both unconditionally
+  # imported by pymstm/__init__.py, so pydantic is a real core runtime
+  # dependency now, not just something the dashboard extra happens to
+  # need. Confirmed via a real CI failure (`uv sync --extra dev` doesn't
+  # pull in the dashboard extra, so pydantic was missing entirely).
+  "pydantic>=2.0",
+]
 
 [project.optional-dependencies]
 # meson/ninja/meson-python are here (not just build-system.requires)
@@ -35,7 +45,7 @@ dependencies = ["numpy>=1.25"]
 # the release runs entirely via the official PSR GitHub Action (see
 # .github/workflows/publish.yml), which bundles it.
 dev = ["pytest>=7", "pytest-cov", "meson>=1.1", "ninja", "meson-python>=0.15"]
-dashboard = ["streamlit>=1.28", "pandas>=2.0", "plotly>=5.0", "pydantic>=2.0"]
+dashboard = ["streamlit>=1.28", "pandas>=2.0", "plotly>=5.0"]
 
 [project.urls]
 Repository = "https://github.com/arunoruto/pyMSTM"
