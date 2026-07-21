@@ -65,6 +65,13 @@ class MstmInpConfig(BaseModel):
     # Output flags
     calculate_scattering_matrix: bool = True
     print_sphere_data: bool = True
+    scattering_map_model: int = 0
+    scattering_map_dimension: int | None = None
+
+    # Orientation / incidence averaging
+    random_orientation: bool = False
+    incidence_average: bool = False
+    number_incident_directions: int = 16
 
     # Gaussian beam
     gaussian_beam_constant: float = 0.0
@@ -114,7 +121,15 @@ class MstmInpConfig(BaseModel):
             "print_sphere_data": self.print_sphere_data,
             "output_file": self.output_file,
             "gaussian_beam_constant": self.gaussian_beam_constant,
+            "random_orientation": self.random_orientation,
+            "incidence_average": self.incidence_average,
         }
+        if self.scattering_map_dimension is not None:
+            result["scattering_map_dimension"] = self.scattering_map_dimension
+        if self.scattering_map_model:
+            result["scattering_map_model"] = self.scattering_map_model
+        if self.incidence_average:
+            result["number_incident_directions"] = self.number_incident_directions
         if self.number_plane_boundaries > 0:
             result["layer_thicknesses"] = self.layer_thicknesses
             result["layer_ref_indices"] = [
@@ -310,6 +325,31 @@ def parse_inp_text(text: str) -> MstmInpConfig:
                     config.cell_width_y = _parse_fortran_real(parts[1])
                 i += 1
 
+        elif keyword == "scattering_map_model":
+            if i < len(lines):
+                config.scattering_map_model = int(lines[i])
+                i += 1
+
+        elif keyword == "scattering_map_dimension":
+            if i < len(lines):
+                config.scattering_map_dimension = int(lines[i])
+                i += 1
+
+        elif keyword == "random_orientation":
+            if i < len(lines):
+                config.random_orientation = _parse_bool(lines[i])
+                i += 1
+
+        elif keyword == "incidence_average":
+            if i < len(lines):
+                config.incidence_average = _parse_bool(lines[i])
+                i += 1
+
+        elif keyword == "number_incident_directions":
+            if i < len(lines):
+                config.number_incident_directions = int(lines[i])
+                i += 1
+
         elif keyword == "end_of_options":
             break
 
@@ -340,8 +380,6 @@ def parse_inp_text(text: str) -> MstmInpConfig:
             "calculate_near_field",
             "random_configuration",
             "configuration_average",
-            "incidence_average",
-            "random_orientation",
         ):
             if i < len(lines) and not lines[i].lower() in _KEYWORDS:
                 i += 1
@@ -397,6 +435,9 @@ _KEYWORDS = {
     "configuration_average",
     "incidence_average",
     "random_orientation",
+    "number_incident_directions",
+    "scattering_map_model",
+    "scattering_map_dimension",
 }
 
 

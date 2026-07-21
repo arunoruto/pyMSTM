@@ -52,8 +52,12 @@ def write_inp_file(
     tmatrix_convergence_eps: float = 1e-6,
     calculate_scattering_matrix: bool = True,
     scattering_map_dimension: int | None = None,
+    scattering_map_model: int | None = None,
     normalize_s11: bool = True,
     azimuthal_average: bool = False,
+    random_orientation: bool = False,
+    incidence_average: bool = False,
+    number_incident_directions: int | None = None,
     print_sphere_data: bool = True,
     output_file: str = "mstm_output.dat",
     layer_thicknesses: Sequence[float] | None = None,
@@ -67,6 +71,33 @@ def write_inp_file(
 
     Parameters map directly to the corresponding MSTM input keywords.
     Generated file can be passed to the standalone ``mstm`` CLI binary.
+
+    scattering_map_model : int, optional
+        0 (MSTM's own default) = fixed incident-plane theta-only table
+        (unaffected by *scattering_map_dimension*); any nonzero value
+        activates the ``(kx, ky)`` dual-hemisphere scattering-map output,
+        whose resolution IS controlled by *scattering_map_dimension*. If
+        *scattering_map_dimension* is set and this is left ``None``, it
+        is automatically written as ``1`` so the dimension actually takes
+        effect (see the note on *scattering_map_dimension* below) -- pass
+        ``0`` explicitly to keep the old incident-plane-only behavior
+        alongside a *scattering_map_dimension* value that will then have
+        no effect (matches MSTM's own documented behavior, not a pyMSTM
+        bug in that case).
+    random_orientation : bool
+        Average over all cluster orientations internally (MSTM's own
+        random-orientation solver path, distinct from and complementary
+        to pyMSTM's own ``MSTM.compute_tmatrix()``/``ranorient_smatrix()``
+        GSF-expansion route through the f2py bindings -- this keyword is
+        the CLI-only, no-T-matrix-file-roundtrip-needed equivalent).
+    incidence_average : bool
+        Average over *number_incident_directions* incident directions
+        internally, within a single CLI invocation. This is MSTM's own
+        native incidence-averaging and is independent of any caller-side
+        re-solve-at-N-angles loop implemented outside pyMSTM.
+    number_incident_directions : int, optional
+        Number of directions for *incidence_average* (MSTM's own default
+        is 16 if left unset here).
     """
     fd = _fortran_real
     nspheres = len(radii)
@@ -145,23 +176,46 @@ def write_inp_file(
         # .inp text path has no further "true unnormalized" mode to
         # request, so callers wanting an exact match to
         # get_scattering_angle()'s convention need to divide that factor
-        # back out themselves (see t-bench's mstm_cli.py adapter for
-        # where that's done).
+        # back out via pymstm._convert.cli_normalized_s11_to_raw().
         lines.append("normalize_s11")
         lines.append("f")
     if scattering_map_dimension is not None:
-        # NOTE: confirmed this has no effect on the "scattering matrix in
-        # incident plane" text table parse_mstm_output() reads (fixed
-        # -180..180deg, 361 points at 1deg resolution regardless of this
-        # value) -- exposed anyway since it's a real .inp keyword that
-        # may matter for other output modes (e.g. random-orientation
-        # runs) not yet exercised by any caller here.
+        # scattering_map_dimension only has any effect when
+        # scattering_map_model != 0 (confirmed via MSTM's own Fortran
+        # source: model 0, MSTM's own default, always uses the fixed
+        # incident-plane table regardless of this value; the
+        # (kx,ky)-dual-hemisphere output that scattering_map_dimension
+        # actually sizes only runs when the model is nonzero). Default to
+        # model 1 whenever a caller sets scattering_map_dimension but
+        # doesn't separately specify scattering_map_model, so the
+        # dimension they asked for actually takes effect instead of being
+        # silently inert -- this was a real bug in pyMSTM prior to this
+        # fix (the parameter existed but could never do anything).
         lines.append("scattering_map_dimension")
         lines.append(str(scattering_map_dimension))
+        effective_model = (
+            scattering_map_model if scattering_map_model is not None else 1
+        )
+        lines.append("scattering_map_model")
+        lines.append(str(effective_model))
+    elif scattering_map_model is not None:
+        lines.append("scattering_map_model")
+        lines.append(str(scattering_map_model))
 
     if azimuthal_average:
         lines.append("azimuthal_average")
         lines.append("t")
+
+    if random_orientation:
+        lines.append("random_orientation")
+        lines.append("t")
+
+    if incidence_average:
+        lines.append("incidence_average")
+        lines.append("t")
+        if number_incident_directions is not None:
+            lines.append("number_incident_directions")
+            lines.append(str(number_incident_directions))
 
     # Per-sphere output
     lines.append("print_sphere_data")

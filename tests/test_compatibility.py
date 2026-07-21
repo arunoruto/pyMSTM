@@ -5,32 +5,27 @@ parse the output, run the same configuration through pyMSTM, and compare.
 """
 
 import os
-import shutil
-import subprocess
 
 import numpy as np
 import pytest
 
-from pymstm import MSTM
+from pymstm import MSTM, MstmNotFoundError, find_mstm_binary, run_mstm
 from pymstm._inp import write_inp_file
-from pymstm._parser import parse_mstm_output
 
-_PROJ_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-_MSTM_BIN = os.path.join(_PROJ_ROOT, "build", "mstm")
+
+def _mstm_available() -> bool:
+    try:
+        find_mstm_binary()
+    except MstmNotFoundError:
+        return False
+    return True
+
 
 pytestmark = pytest.mark.skipif(
-    not os.path.isfile(_MSTM_BIN),
-    reason=f"MSTM CLI binary not found at {_MSTM_BIN}. Run 'make cli' first.",
+    not _mstm_available(),
+    reason="MSTM CLI binary not found on PATH. Build it (`make cli`) and add it "
+    "to PATH, or set PYMSTM_MSTM_BIN.",
 )
-
-
-def _run_mstm_cli(inp_path: str, cwd: str) -> dict:
-    """Run MSTM CLI on an inp file, parse the output, return results dict."""
-    subprocess.run([_MSTM_BIN, inp_path], cwd=cwd, capture_output=True, check=True)
-    out_path = os.path.join(cwd, "mstm_output.dat")
-    if not os.path.isfile(out_path):
-        raise FileNotFoundError(f"MSTM did not produce output at {out_path}")
-    return parse_mstm_output(out_path)
 
 
 def _make_inp(tmp_path, **kwargs):
@@ -63,7 +58,7 @@ def test_single_sphere_total_qext(tmp_path):
         calculate_scattering_matrix=False,
     )
     inp = _make_inp(tmp_path, **kwargs)
-    mstm_result = _run_mstm_cli(inp, str(tmp_path))
+    mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
     m = MSTM()
     m.set_spheres(
@@ -101,7 +96,7 @@ def test_single_sphere_per_sphere_qext(tmp_path):
         max_iterations=5000,
         calculate_scattering_matrix=False,
     )
-    mstm_result = _run_mstm_cli(inp, str(tmp_path))
+    mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
     m = MSTM()
     m.set_spheres(
@@ -142,7 +137,7 @@ def test_single_sphere_absorbing(tmp_path):
         max_iterations=5000,
         calculate_scattering_matrix=False,
     )
-    mstm_result = _run_mstm_cli(inp, str(tmp_path))
+    mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
     m = MSTM()
     m.set_spheres(
@@ -188,7 +183,7 @@ def test_two_sphere_total_qext(tmp_path):
         max_iterations=5000,
         calculate_scattering_matrix=False,
     )
-    mstm_result = _run_mstm_cli(inp, str(tmp_path))
+    mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
     m = MSTM()
     m.set_spheres(
@@ -226,7 +221,7 @@ def test_two_sphere_per_sphere_qext(tmp_path):
         max_iterations=5000,
         calculate_scattering_matrix=False,
     )
-    mstm_result = _run_mstm_cli(inp, str(tmp_path))
+    mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
     m = MSTM()
     m.set_spheres(
@@ -270,7 +265,7 @@ def test_solution_error_agreement(tmp_path):
         max_iterations=5000,
         calculate_scattering_matrix=False,
     )
-    mstm_result = _run_mstm_cli(inp, str(tmp_path))
+    mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
     m = MSTM()
     m.set_spheres(
@@ -312,7 +307,7 @@ def test_scattering_matrix_forward(tmp_path):
         max_iterations=5000,
         calculate_scattering_matrix=True,
     )
-    _run_mstm_cli(inp, str(tmp_path))
+    run_mstm(inp_path=inp, workdir=tmp_path)
 
     m = MSTM()
     m.set_spheres(
@@ -355,7 +350,7 @@ def test_scattering_matrix_dlp_oblique_angle(tmp_path):
         max_iterations=5000,
         calculate_scattering_matrix=True,
     )
-    mstm_result = _run_mstm_cli(inp, str(tmp_path))
+    mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
     sm = mstm_result["scattering_matrix"]
     assert sm is not None
 
@@ -419,7 +414,7 @@ def test_scattering_matrix_offaxis_cluster(tmp_path):
         max_iterations=5000,
         calculate_scattering_matrix=True,
     )
-    mstm_result = _run_mstm_cli(inp, str(tmp_path))
+    mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
     sm = mstm_result["scattering_matrix"]
     assert sm is not None
     angles_deg = np.asarray(sm["angles_deg"])
@@ -484,7 +479,7 @@ def test_scattering_matrix_azimuthal_average(tmp_path):
         calculate_scattering_matrix=True,
         azimuthal_average=True,
     )
-    mstm_result = _run_mstm_cli(inp, str(tmp_path))
+    mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
     sm = mstm_result["scattering_matrix"]
     assert sm is not None
     angles_deg = np.asarray(sm["angles_deg"])
@@ -544,7 +539,7 @@ def test_medium_ref_index(tmp_path):
         max_iterations=5000,
         calculate_scattering_matrix=False,
     )
-    mstm_result = _run_mstm_cli(inp, str(tmp_path))
+    mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
     m = MSTM()
     m.set_spheres(

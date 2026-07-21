@@ -119,7 +119,9 @@ mstm_ext = custom_target(
 python_sources = [
   'src' / 'pymstm' / '__init__.py',
   'src' / 'pymstm' / '_build.py',
+  'src' / 'pymstm' / '_cli.py',
   'src' / 'pymstm' / '_config.py',
+  'src' / 'pymstm' / '_convert.py',
   'src' / 'pymstm' / '_inp.py',
   'src' / 'pymstm' / '_inp_parser.py',
   'src' / 'pymstm' / '_mstm.py',

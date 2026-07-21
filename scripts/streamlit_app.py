@@ -9,7 +9,6 @@ Missing references prompt the user to upload the required file.
 from __future__ import annotations
 
 import os
-import subprocess
 import tempfile
 import tomllib
 import uuid
@@ -20,7 +19,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from pymstm import MSTM
+from pymstm import MSTM, MstmNotFoundError, find_mstm_binary, run_mstm
 from pymstm._config import (
     IncidentConfig,
     MediumConfig,
@@ -32,7 +31,6 @@ from pymstm._config import (
     config_to_inp,
 )
 from pymstm._inp_parser import MstmInpConfig, parse_inp_text
-from pymstm._parser import parse_all_runs, parse_mstm_output
 
 # ---------------------------------------------------------------------------
 # Session keys
@@ -48,8 +46,15 @@ _KEY_UPLOADS = "temp_uploads"  # dict: filename -> bytes
 # ---------------------------------------------------------------------------
 
 _PROJ_ROOT = Path(__file__).resolve().parent.parent
-_MSTM_BIN = _PROJ_ROOT / "build" / "mstm"
 _TESTS_DATA = _PROJ_ROOT / "tests" / "data"
+
+
+def _cli_available() -> bool:
+    try:
+        find_mstm_binary()
+    except MstmNotFoundError:
+        return False
+    return True
 
 
 def _scan_cluster_files() -> list[str]:
@@ -118,27 +123,10 @@ def _apply_toml(raw: str) -> SweepConfig | None:
 
 @st.cache_data(show_spinner=False)
 def _run_cli_sweep(inp_text: str) -> list[dict]:
-    with tempfile.TemporaryDirectory() as tmp:
-        inp_path = os.path.join(tmp, "run.inp")
-        with open(inp_path, "w") as f:
-            f.write(inp_text)
-        r = subprocess.run(
-            [str(_MSTM_BIN), inp_path],
-            cwd=tmp,
-            capture_output=True,
-            text=True,
-            timeout=1800,
-        )
-        if r.returncode != 0:
-            raise RuntimeError(f"MSTM CLI rc={r.returncode}\n{r.stderr[:500]}")
-        out_path = os.path.join(tmp, "mstm_output.dat")
-        if not os.path.isfile(out_path):
-            for cand in ("mstmtest.dat", "mstm_output.dat"):
-                alt = os.path.join(tmp, cand)
-                if os.path.isfile(alt):
-                    out_path = alt
-                    break
-        return parse_all_runs(out_path)
+    # MstmExecutionError/MstmNotFoundError are both RuntimeError subclasses,
+    # so the caller's `except Exception` already handles them the same way
+    # it handled the old ad-hoc RuntimeError this replaces.
+    return run_mstm(inp_text=inp_text, timeout=1800).runs
 
 
 def _run_pymstm_sweep(
@@ -216,29 +204,30 @@ def _run_pymstm_sweep(
 def _pymstm_smatrix(
     m: MSTM, target_angles: list[float] | None = None, alpha_deg: float = 0.0
 ) -> dict | None:
+    # Always loop get_scattering_angle() rather than calling
+    # get_scattering_matrix() (retired from this dashboard entirely -- see
+    # its docstring for the confirmed non-deterministic memory-safety
+    # bug). When no target_angles are given, fall back to the CLI's own
+    # default resolution (-180..180deg, 361 points at 1deg) so the two
+    # code paths still produce comparably-shaped output.
+    if target_angles is None:
+        target_angles = list(np.linspace(-180, 180, 361))
     try:
-        if target_angles is not None:
-            # With azimuthal_average enabled (the default), the CLI reports
-            # theta in [0,180] only and phi is irrelevant. This phi
-            # selection only matters for the (now unused) non-averaged
-            # "incident plane" cut, where the CLI's table covers a full
-            # -180..180 sweep by pairing theta in [0,180] with azimuth alpha
-            # for non-negative angle labels and alpha+pi for negative ones
-            # (see scattering_matrix_calculation in the Fortran source).
-            alpha_rad = np.deg2rad(alpha_deg)
-            rows = []
-            for deg in target_angles:
-                ct = np.cos(np.deg2rad(deg))
-                phi = alpha_rad + np.pi if deg < 0 else alpha_rad
-                sm = m.get_scattering_angle(costheta=ct, phi=phi)
-                rows.append(sm.tolist())
-            return {"angles_deg": target_angles, "matrix": rows}
-        costheta, smat = m.get_scattering_matrix()
-        smat_up = smat[:16, :]
-        na = smat_up.shape[1]
-        angles = list(np.rad2deg(np.arccos(costheta)))
-        rows = [smat_up[:, i].tolist() for i in range(na)]
-        return {"angles_deg": angles, "matrix": rows}
+        # With azimuthal_average enabled (the default), the CLI reports
+        # theta in [0,180] only and phi is irrelevant. This phi selection
+        # only matters for the (now unused) non-averaged "incident plane"
+        # cut, where the CLI's table covers a full -180..180 sweep by
+        # pairing theta in [0,180] with azimuth alpha for non-negative
+        # angle labels and alpha+pi for negative ones (see
+        # scattering_matrix_calculation in the Fortran source).
+        alpha_rad = np.deg2rad(alpha_deg)
+        rows = []
+        for deg in target_angles:
+            ct = np.cos(np.deg2rad(deg))
+            phi = alpha_rad + np.pi if deg < 0 else alpha_rad
+            sm = m.get_scattering_angle(costheta=ct, phi=phi)
+            rows.append(sm.tolist())
+        return {"angles_deg": target_angles, "matrix": rows}
     except Exception:
         return None
 
@@ -310,26 +299,12 @@ def _single_run(inp_text: str, config: MstmInpConfig, positions: np.ndarray):
 
     # --- helpers for single run ---
     def _run_cli(inp_text, output_filename):
-        with tempfile.TemporaryDirectory() as tmp:
-            ip = os.path.join(tmp, "run.inp")
-            with open(ip, "w") as f:
-                f.write(inp_text)
-            r = subprocess.run(
-                [str(_MSTM_BIN), ip],
-                cwd=tmp,
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            if r.returncode != 0:
-                raise RuntimeError(f"CLI rc={r.returncode}")
-            op = os.path.join(tmp, output_filename)
-            if not os.path.isfile(op):
-                for c in ("mstmtest.dat", "mstm_output.dat"):
-                    if os.path.isfile(os.path.join(tmp, c)):
-                        op = os.path.join(tmp, c)
-                        break
-            return parse_mstm_output(op)
+        # output_filename comes from the already-parsed MstmInpConfig, but
+        # run_mstm() introspects the same value from inp_text itself, so
+        # it's redundant to pass through here (kept as a parameter only to
+        # avoid touching this function's call site below).
+        del output_filename
+        return run_mstm(inp_text=inp_text, timeout=120).parsed
 
     def _run_py(config):
         m = MSTM()
@@ -390,7 +365,7 @@ def _single_run(inp_text: str, config: MstmInpConfig, positions: np.ndarray):
             "scattering_matrix": sm,
         }
 
-    cli_ok = _MSTM_BIN.is_file()
+    cli_ok = _cli_available()
     col_left, col_right = st.columns(2)
     with col_left:
         st.subheader("MSTM Fortran CLI")
@@ -777,7 +752,7 @@ with tab_config:
     # Generate inp for CLI
     inp_text = config_to_inp(cfg, output_filename="mstm_output.dat")
 
-    cli_ok = _MSTM_BIN.is_file()
+    cli_ok = _cli_available()
     cli_runs: list[dict] = []
 
     if cli_ok:
