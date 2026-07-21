@@ -9,7 +9,7 @@ import os
 import numpy as np
 import pytest
 
-from pymstm import MSTM, MstmNotFoundError, find_mstm_binary, run_mstm
+from pymstm import MstmBindings, MstmNotFoundError, find_mstm_binary, run_mstm
 from pymstm._inp import write_inp_file
 
 
@@ -60,7 +60,7 @@ def test_single_sphere_total_qext(tmp_path):
     inp = _make_inp(tmp_path, **kwargs)
     mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=radii, positions=positions, orders=[12], ref_re=ref_re, ref_im=ref_im
     )
@@ -98,7 +98,7 @@ def test_single_sphere_per_sphere_qext(tmp_path):
     )
     mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=radii, positions=positions, orders=[12], ref_re=ref_re, ref_im=ref_im
     )
@@ -139,7 +139,7 @@ def test_single_sphere_absorbing(tmp_path):
     )
     mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=radii, positions=positions, orders=[12], ref_re=ref_re, ref_im=ref_im
     )
@@ -185,7 +185,7 @@ def test_two_sphere_total_qext(tmp_path):
     )
     mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=radii, positions=positions, orders=[6, 6], ref_re=ref_re, ref_im=ref_im
     )
@@ -223,7 +223,7 @@ def test_two_sphere_per_sphere_qext(tmp_path):
     )
     mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=radii, positions=positions, orders=[6, 6], ref_re=ref_re, ref_im=ref_im
     )
@@ -267,7 +267,7 @@ def test_solution_error_agreement(tmp_path):
     )
     mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=radii, positions=positions, orders=[12], ref_re=ref_re, ref_im=ref_im
     )
@@ -309,7 +309,7 @@ def test_scattering_matrix_forward(tmp_path):
     )
     run_mstm(inp_path=inp, workdir=tmp_path)
 
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=radii, positions=positions, orders=[12], ref_re=ref_re, ref_im=ref_im
     )
@@ -358,7 +358,7 @@ def test_scattering_matrix_dlp_oblique_angle(tmp_path):
     idx = int(np.argmin(np.abs(angles_deg - 90.0)))
     cli_dlp = sm["matrix"][idx][4]  # CLI already prints this as S12/S11
 
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=radii, positions=positions, orders=[12], ref_re=ref_re, ref_im=ref_im
     )
@@ -420,7 +420,7 @@ def test_scattering_matrix_offaxis_cluster(tmp_path):
     angles_deg = np.asarray(sm["angles_deg"])
     cli_s11 = np.array([row[0] for row in sm["matrix"]])
 
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=radii, positions=positions, orders=[8, 8], ref_re=ref_re, ref_im=ref_im
     )
@@ -487,7 +487,7 @@ def test_scattering_matrix_azimuthal_average(tmp_path):
     cli_s11 = np.array([row[0] for row in sm["matrix"]])
     cli_dlp = np.array([row[4] for row in sm["matrix"]])  # already S12/S11
 
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=radii, positions=positions, orders=[8, 8], ref_re=ref_re, ref_im=ref_im
     )
@@ -541,7 +541,7 @@ def test_medium_ref_index(tmp_path):
     )
     mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=radii, positions=positions, orders=[8], ref_re=ref_re, ref_im=ref_im
     )

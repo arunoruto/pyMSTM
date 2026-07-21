@@ -3,12 +3,12 @@
 import os
 import numpy as np
 import pytest
-from pymstm import MSTM
+from pymstm import MstmBindings
 
 
 @pytest.fixture
 def dimer_mstm():
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=[3.0, 3.0],
         positions=[[0, 0, -3], [0, 0, 3]],
@@ -46,7 +46,7 @@ def test_ranorient_smatrix(dimer_mstm):
 
     tmf = "tmatrix_temp.dat"
     if os.path.exists(tmf):
-        m2 = MSTM()
+        m2 = MstmBindings()
         result = m2.ranorient_smatrix(tmf)
         assert result["tmatrix_order"] > 0
         assert len(result["sm_coef"]) == 16 * (2 * result["tmatrix_order"] + 1)

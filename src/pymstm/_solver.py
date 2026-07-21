@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from ._cli import run_mstm
 from ._convert import s11_to_phase_function
-from ._mstm import MSTM as _MstmBindings
+from ._mstm import MstmBindings as _MstmBindings
 
 
 class MstmPerSphereResult(BaseModel):
@@ -45,7 +45,7 @@ class MstmMuellerPoint(BaseModel):
 
 
 class MstmResult(BaseModel):
-    """Backend-agnostic result of solving an :class:`MstmProblem` --
+    """Backend-agnostic result of solving an :class:`MSTM` problem --
     the same shape regardless of ``cli=True``/``False``, so bindings and
     CLI results can be compared directly (benchmarking, regression
     testing)."""
@@ -66,15 +66,19 @@ class MstmResult(BaseModel):
     mueller: list[MstmMuellerPoint] | None = None
 
 
-class MstmProblem(BaseModel):
+class MSTM(BaseModel):
     """A complete, self-contained MSTM scattering problem: cluster
     geometry, medium, incident wave, and solver settings, validated with
-    pydantic before ever touching MSTM.
+    pydantic before ever touching MSTM. The general, high-level, dual-
+    backend interface -- for the low-level, stateful, builder-pattern
+    bindings this uses internally (and that give access to every
+    individual MSTM capability, e.g. layers, lattices, T-matrix export),
+    see :class:`pymstm.MstmBindings`.
 
     ``radii``/``positions`` are in MSTM's own native, dimensionless
-    size-parameter units (the same convention ``MSTM.set_spheres()`` and
-    ``write_inp_file()`` already use -- e.g. ``x = 2*pi*r/lambda`` for a
-    single sphere), *not* physical length units. Scale physical
+    size-parameter units (the same convention ``MstmBindings.set_spheres()``
+    and ``write_inp_file()`` already use -- e.g. ``x = 2*pi*r/lambda`` for
+    a single sphere), *not* physical length units. Scale physical
     radii/positions by your wavenumber before constructing this, exactly
     as the existing lower-level APIs already require.
 
@@ -86,7 +90,7 @@ class MstmProblem(BaseModel):
 
     Examples
     --------
-    >>> problem = MstmProblem(
+    >>> problem = MSTM(
     ...     radii=[5.0], positions=[(0.0, 0.0, 0.0)],
     ...     ref_re=[1.5], ref_im=[0.0],
     ... )
@@ -140,7 +144,7 @@ class MstmProblem(BaseModel):
     the serial ``mstm`` binary."""
 
     @model_validator(mode="after")
-    def _check_consistency(self) -> MstmProblem:
+    def _check_consistency(self) -> MSTM:
         n = len(self.radii)
         if n == 0:
             raise ValueError("at least one sphere is required")

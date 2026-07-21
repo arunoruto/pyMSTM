@@ -228,9 +228,9 @@ def test_solve_matches_ctypes_path():
     assert status == 0
     assert not np.any(np.isnan(q_ext))
 
-    from pymstm import MSTM
+    from pymstm import MstmBindings
 
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=[3.0, 3.0],
         positions=[[0, 0, -5], [0, 0, 5]],

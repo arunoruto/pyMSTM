@@ -9,11 +9,10 @@ f2py; only subroutines with real orchestration logic (allocation, defaults
 fan-out, multi-step calculations) go through dedicated wrapper calls.
 
 Usage:
-    import mstm
-    import numpy as np
+    import pymstm
 
     # Create a solver instance
-    m = mstm.MSTM()
+    m = pymstm.MstmBindings()
 
     # Set up a cluster of spheres
     radii = [0.5, 0.5]
@@ -55,8 +54,13 @@ def get_tmatrix_size(tmatrix_order):
     )
 
 
-class MSTM:
-    """Main interface to the MSTM T-Matrix solver."""
+class MstmBindings:
+    """Direct f2py bindings to the MSTM T-Matrix solver -- a low-level,
+    stateful, builder-pattern interface (set_spheres/set_incident/.../
+    prepare()/solve()/finalize()) giving access to every individual MSTM
+    capability. For a higher-level, pydantic-validated interface that
+    also supports the standalone CLI binary as an alternate backend, see
+    :class:`pymstm.MSTM`."""
 
     def __init__(self, library_path=None):  # type: (str | None) -> None
         # library_path is accepted for backward-compatible call signatures

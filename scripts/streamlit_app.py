@@ -19,7 +19,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from pymstm import MSTM, MstmNotFoundError, find_mstm_binary, run_mstm
+from pymstm import MstmBindings, MstmNotFoundError, find_mstm_binary, run_mstm
 from pymstm._config import (
     IncidentConfig,
     MediumConfig,
@@ -143,7 +143,7 @@ def _run_pymstm_sweep(
     progress = st.progress(0, "pyMSTM sweep…")
     results: list[dict] = []
     for idx, ls in enumerate(ls_vals):
-        m = MSTM()
+        m = MstmBindings()
         m.set_length_scale(float(ls))
         m.set_spheres(
             radii=list(positions[:, 3]),
@@ -202,7 +202,7 @@ def _run_pymstm_sweep(
 
 
 def _pymstm_smatrix(
-    m: MSTM, target_angles: list[float] | None = None, alpha_deg: float = 0.0
+    m: MstmBindings, target_angles: list[float] | None = None, alpha_deg: float = 0.0
 ) -> dict | None:
     # Always loop get_scattering_angle() rather than calling
     # get_scattering_matrix() (retired from this dashboard entirely -- see
@@ -307,7 +307,7 @@ def _single_run(inp_text: str, config: MstmInpConfig, positions: np.ndarray):
         return run_mstm(inp_text=inp_text, timeout=120).parsed
 
     def _run_py(config):
-        m = MSTM()
+        m = MstmBindings()
         s = config.spheres
         orders = [
             max(
