@@ -9,6 +9,12 @@ from pymstm._cli import (
 )
 from pymstm._convert import cli_normalized_s11_to_raw, s11_to_phase_function
 from pymstm._mstm import MSTM
+from pymstm._solver import (
+    MstmMuellerPoint,
+    MstmPerSphereResult,
+    MstmProblem,
+    MstmResult,
+)
 
 __all__ = [
     "MSTM",
@@ -19,5 +25,9 @@ __all__ = [
     "MstmExecutionError",
     "s11_to_phase_function",
     "cli_normalized_s11_to_raw",
+    "MstmProblem",
+    "MstmResult",
+    "MstmPerSphereResult",
+    "MstmMuellerPoint",
 ]
 __version__ = "1.1.0"

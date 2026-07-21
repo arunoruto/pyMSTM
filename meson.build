@@ -126,6 +126,7 @@ python_sources = [
   'src' / 'pymstm' / '_inp_parser.py',
   'src' / 'pymstm' / '_mstm.py',
   'src' / 'pymstm' / '_parser.py',
+  'src' / 'pymstm' / '_solver.py',
 ]
 
 py.install_sources(
