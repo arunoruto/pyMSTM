@@ -89,7 +89,8 @@ def test_scattering_matrix():
     assert not np.any(np.isnan(sm))
     assert sm[0] > 0  # S11 should be positive
 
-    ct, smat = m.get_scattering_matrix()
+    with pytest.warns(RuntimeWarning, match="non-deterministic"):
+        ct, smat = m.get_scattering_matrix()
     assert smat.shape[1] > 0
     assert not np.any(np.isnan(smat))
 

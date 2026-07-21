@@ -37,6 +37,8 @@ Usage:
     print("Total Q_sca:", result['qsca_tot'])
 """
 
+import warnings
+
 import numpy as np
 
 from . import _mstm_ext as _ext
@@ -270,15 +272,54 @@ class MSTM:
         Parameters
         ----------
         costheta : float
-            Cosine of scattering angle.
+            Cosine of the scattering angle, in the LAB frame (see Notes --
+            this is NOT relative to the incident direction).
         phi : float
-            Azimuthal scattering angle in radians.
+            Azimuthal scattering angle in radians, in the LAB frame.
 
         Returns
         -------
         ndarray, shape (16,)
-            The 16 elements of the 4x4 scattering matrix (Mueller matrix),
-            flattened in column-major order: S11, S12, S13, S14, S21, ...
+            The 16 elements of the 4x4 scattering (Mueller) matrix,
+            flattened in ROW-major order: S11, S12, S13, S14, S21, S22,
+            ..., S44 (a prior version of this docstring incorrectly
+            labeled this "column-major" while listing the row-major
+            sequence -- the sequence was always correct, only the label
+            was wrong). Note this differs from
+            ``pymstm._parser.parse_mstm_output()``'s
+            ``['scattering_matrix']['matrix']``, whose per-angle
+            16-element rows are assembled in COLUMN-major order (S11,
+            S21, S31, S41, S12, ...) to match the CLI's own printed
+            column layout -- the two are not directly comparable
+            index-for-index without re-permuting one to match the other.
+
+        Notes
+        -----
+        **Angles are lab-frame, not incident-relative.** ``costheta``/
+        ``phi`` are spherical coordinates in the lab (simulation) frame,
+        matching MSTM's own incident-wave convention
+        ``k_hat = Rz(alpha_deg).Ry(beta_deg).z_hat`` (see
+        ``incident_field_initialization`` in the MSTM Fortran source).
+        The forward-scattering peak is therefore at
+        ``(theta=beta_deg, phi=alpha_deg)`` as set via ``set_incident()``,
+        NOT at ``(theta=0, phi=anything)`` -- getting this wrong for a
+        tilted incident direction silently produces plausible-looking but
+        physically wrong values (confirmed empirically: results were off
+        by more than 1000x at some angles) rather than an obvious error.
+        To sweep angles relative to the incident direction instead,
+        rotate the desired ``(theta_rel, phi_rel)`` into the lab frame via
+        the same ``R = Rz(alpha_deg).Ry(beta_deg)`` before calling this
+        method.
+
+        **Raw S11 convention.** The returned S11 follows the
+        Bohren-Huffman convention ``dCsca/dOmega = S11 / k**2`` (i.e.
+        ``integral(S11 dOmega) over 4*pi steradians == k**2 * Csca``),
+        NOT the radiative-transfer "phase function" convention
+        (``integral(S11 dOmega) == 4*pi``) that a caller asking for "the
+        phase function" would reasonably expect. Confirmed empirically by
+        direct numerical integration for a symmetric single sphere. See
+        :func:`pymstm._convert.s11_to_phase_function` to convert to the
+        4*pi-normalized phase function convention.
         """
         if not self._solved:
             raise RuntimeError("Not solved. Call solve() first.")
@@ -287,6 +328,21 @@ class MSTM:
 
     def get_scattering_matrix(self):
         """Get the full scattering matrix over all computed angles.
+
+        .. warning::
+            **This method has a confirmed, non-deterministic memory-safety
+            bug** in the underlying Fortran binding (garbage/denormal/
+            negative-S11 values that vary across repeated calls within
+            the same process, even with identical inputs). Root-caused to
+            likely an uninitialized Fortran local variable somewhere in
+            the call chain feeding this array (NOT in the underlying
+            ``scatteringmatrix()`` physics routine itself, which is
+            proven correct -- :meth:`get_scattering_angle` calls the
+            exact same routine and is 100% deterministic/reliable).
+            **Prefer looping over angles with** :meth:`get_scattering_angle`
+            **instead**, which does not exhibit this bug. This method is
+            kept only for backward compatibility and emits a
+            ``RuntimeWarning`` on every call.
 
         Returns
         -------
@@ -298,6 +354,16 @@ class MSTM:
         """
         if not self._solved:
             raise RuntimeError("Not solved. Call solve() first.")
+
+        warnings.warn(
+            "get_scattering_matrix() has a known non-deterministic "
+            "memory-safety bug (values vary across repeated calls with "
+            "identical inputs, even within the same process). Prefer "
+            "looping over get_scattering_angle() instead. See this "
+            "method's docstring for details.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
         ii = self._ext.inputinterface
         smat = np.asarray(ii.scat_mat)
