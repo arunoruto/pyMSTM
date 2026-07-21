@@ -2,12 +2,12 @@
 
 import numpy as np
 import pytest
-from pymstm import MSTM
+from pymstm import MstmBindings
 
 
 def test_single_sphere_solve():
     """Single dielectric sphere: should converge quickly."""
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=[5.0],
         positions=[[0, 0, 0]],
@@ -43,7 +43,7 @@ def test_two_sphere_solve():
     physics, not a solver bug -- picked 200 for a comfortable margin
     inside the tolerance below without making the case toweringly large.
     """
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=[3.0, 3.0],
         positions=[[0, 0, -100], [0, 0, 100]],
@@ -71,7 +71,7 @@ def test_two_sphere_solve():
 
 def test_scattering_matrix():
     """Scattering matrix should have valid values."""
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=[5.0],
         positions=[[0, 0, 0]],

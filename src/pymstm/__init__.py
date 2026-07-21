@@ -8,16 +8,17 @@ from pymstm._cli import (
     run_mstm,
 )
 from pymstm._convert import cli_normalized_s11_to_raw, s11_to_phase_function
-from pymstm._mstm import MSTM
+from pymstm._mstm import MstmBindings
 from pymstm._solver import (
+    MSTM,
     MstmMuellerPoint,
     MstmPerSphereResult,
-    MstmProblem,
     MstmResult,
 )
 
 __all__ = [
     "MSTM",
+    "MstmBindings",
     "run_mstm",
     "find_mstm_binary",
     "MstmRunResult",
@@ -25,7 +26,6 @@ __all__ = [
     "MstmExecutionError",
     "s11_to_phase_function",
     "cli_normalized_s11_to_raw",
-    "MstmProblem",
     "MstmResult",
     "MstmPerSphereResult",
     "MstmMuellerPoint",

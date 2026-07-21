@@ -1,12 +1,12 @@
 """Tests for advanced features: layers, lattice."""
 
 import numpy as np
-from pymstm import MSTM
+from pymstm import MstmBindings
 
 
 def test_single_layer():
     """Sphere above a dielectric half-space."""
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=[2.0],
         positions=[[0, 0, 10]],
@@ -30,7 +30,7 @@ def test_single_layer():
 
 def test_multi_layer():
     """3-layer system: vacuum | film | substrate."""
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=[1.5],
         positions=[[0, 0, 1.5]],
@@ -57,7 +57,7 @@ def test_multi_layer():
 
 def test_periodic_lattice():
     """Single sphere in a 2D periodic lattice."""
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=[2.0],
         positions=[[0, 0, 0]],
@@ -79,7 +79,7 @@ def test_periodic_lattice():
 
 def test_lattice_clear():
     """Enable then disable lattice."""
-    m = MSTM()
+    m = MstmBindings()
     m.set_spheres(
         radii=[2.0],
         positions=[[0, 0, 0]],
