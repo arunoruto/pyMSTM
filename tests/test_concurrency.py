@@ -104,3 +104,32 @@ def test_lock_serialises_threads():
     assert not errors
     for i, r in enumerate(out):
         same(r, serial[i % len(TASKS)])
+
+
+def _sphere(r):
+    m = MstmBindings()
+    m.set_spheres([r], [[0, 0, 0]], [10], [1.5], [0.01])
+    m.prepare()
+    return m
+
+
+def test_only_newest_instance_owns_the_state():
+    """Two live instances share MSTM's global Fortran state: the older one
+    must refuse to run, and finalizing/collecting it must not free the
+    newer one's arrays."""
+    m = _sphere(1.0)
+    ref = m.solve()["qext_tot"]
+    m.finalize()
+    with pytest.raises(RuntimeError):
+        m.solve()
+
+    a = _sphere(3.0)
+    b = _sphere(1.0)
+    with pytest.raises(RuntimeError):
+        a.solve()
+    with pytest.raises(RuntimeError):
+        a.set_medium_ref(1.0)
+    a.finalize()
+    del a
+    assert b.solve()["qext_tot"] == ref
+    b.finalize()

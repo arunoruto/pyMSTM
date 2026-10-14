@@ -75,6 +75,11 @@ class MstmBindings:
     also supports the standalone CLI binary as an alternate backend, see
     :class:`pymstm.MSTM`."""
 
+    # MSTM keeps all state in process-global Fortran module variables, so
+    # only one instance can own it: the most recently created one. Older
+    # instances raise instead of silently using (or freeing) its arrays.
+    _owner = None
+
     def __init__(self, library_path=None):  # type: (str | None) -> None
         # library_path is accepted for backward-compatible call signatures
         # but is unused -- the f2py extension is a single compiled module,
@@ -82,9 +87,20 @@ class MstmBindings:
         self._nspheres = 0
         self._prepared = False
         self._solved = False
-        self._ext = _ext
+        self._token = object()
         with MSTM_LOCK:  # never reset defaults under a running solve
-            self._ext.mstm_f2py_bindings.mstm_init()
+            MstmBindings._owner = self._token
+            _ext.mstm_f2py_bindings.mstm_init()
+
+    @property
+    def _ext(self):
+        if MstmBindings._owner is not self._token:
+            raise RuntimeError(
+                "this MstmBindings instance was finalized or superseded by a "
+                "newer one: MSTM's state is process-global, so only the most "
+                "recently created MstmBindings can be used"
+            )
+        return _ext
 
     def set_spheres(self, radii, positions, orders, ref_re, ref_im):
         """Set sphere data for the cluster.
@@ -580,18 +596,24 @@ class MstmBindings:
         return q_ext, q_abs
 
     def finalize(self):
-        """Free all allocated memory and finalize the library."""
-        if self._ext is not None:
-            with MSTM_LOCK:  # never free arrays under a running solve
-                self._ext.mstm_f2py_bindings.mstm_finalize()
-            self._ext = None
+        """Free all allocated memory and finalize the library.
+
+        A no-op for an instance that no longer owns MSTM's state (see
+        ``__init__``), so it never frees a newer instance's arrays.
+        """
+        with MSTM_LOCK:  # never free arrays under a running solve
+            if MstmBindings._owner is self._token:
+                _ext.mstm_f2py_bindings.mstm_finalize()
+                MstmBindings._owner = None
         self._prepared = False
         self._solved = False
 
     def __del__(self):
-        # GC can run this on any thread (e.g. a Dask worker's event loop):
-        # never block it behind someone else's solve -- if the lock is
-        # busy, skip; the next prepare() reallocates everything anyway.
+        # Only the owner frees anything. GC can run this on any thread (e.g.
+        # a Dask worker's event loop): never block it behind someone else's
+        # solve -- if the lock is busy, skip; the next prepare() reallocates.
+        if MstmBindings._owner is not getattr(self, "_token", None):
+            return
         if not MSTM_LOCK.acquire(blocking=False):
             return
         try:
