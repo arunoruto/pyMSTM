@@ -356,6 +356,16 @@ subroutine mstm_prepare()
     implicit none
     integer :: i, n
 
+    ! Geometry may have changed since the last solve in this process.
+    ! With store_surface_matrix (on by default) the sphere/plane-boundary
+    ! interaction matrices are computed once and then reused for as long as
+    ! recalculate_surface_matrix stays .false.; the CLI resets it whenever
+    ! an input changes (mstm-input-37.f90 ~209, 363-419), the bindings never
+    ! did. A second layered solve therefore reused the first geometry's
+    ! matrices: silently wrong results, or heap corruption when the sphere
+    ! count grew (stored_ref sized for the old count).
+    recalculate_surface_matrix = .true.
+
     ! Determine host spheres (encapsulation)
     call findhostspheres()
 

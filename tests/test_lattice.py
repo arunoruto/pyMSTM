@@ -73,3 +73,26 @@ def test_repeated_solves_consistent():
     # isolated sphere is independent of what ran before it
     assert first[(1, None)]["qabs_tot"] == pytest.approx(0.0984898, rel=1e-5)
 
+
+def _solve_layered(z, n):
+    m = MstmBindings()
+    m.set_spheres([2.0] * n, [[4.5 * i, 0, z] for i in range(n)], [5] * n, [2.0] * n, [0.01] * n)
+    m.set_layers(thicknesses=[], ref_indices=[(1.0, 0.0), (1.5, 0.0)])
+    m.set_incident(0, 0, 1)
+    m.set_solver_params(eps=1e-8, max_iter=5000)
+    m.prepare()
+    r = m.solve()
+    m.finalize()
+    return r["qext_tot"]
+
+
+def test_repeated_layered_solves_recompute_surface_matrix():
+    """Sphere-boundary matrices must not be reused across geometries.
+
+    Values are from fresh processes; previously the second solve reused
+    the first geometry's stored matrices (wrong value, or heap corruption
+    when the sphere count grew).
+    """
+    fresh = {(10.0, 1): 1.7288503785, (3.0, 1): 1.7153644347, (3.0, 2): 2.1447814854}
+    for case in [(10.0, 1), (3.0, 1), (3.0, 2), (10.0, 1), (3.0, 2)]:
+        assert _solve_layered(*case) == pytest.approx(fresh[case], rel=1e-8)
