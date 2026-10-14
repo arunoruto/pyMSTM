@@ -7,6 +7,127 @@ next to it.
 
 <!-- version list -->
 
+## v2.0.0 (2026-10-14)
+
+### Bug Fixes
+
+- Grant wheels job the permissions its called reusable workflow needs
+  ([`f714443`](https://github.com/arunoruto/pyMSTM/commit/f71444388a4a3c112b9f9dbe4be811d7b954dbde))
+
+- Move pydantic to core dependencies, not just the dashboard extra
+  ([`ef81aba`](https://github.com/arunoruto/pyMSTM/commit/ef81aba1be393ec729e4390f62a422ef8455837e))
+
+- Packages.default should stay the mstm CLI, not the new pymstm
+  ([`9c240dd`](https://github.com/arunoruto/pyMSTM/commit/9c240ddec5a6a988f8a57970f51f4fb2e0c07d00))
+
+- **bindings**: Only the newest MstmBindings may use MSTM's global state
+  ([`b1a861f`](https://github.com/arunoruto/pyMSTM/commit/b1a861f789c509e12a81bbc5b84741dd6795f8ab))
+
+- **bindings**: Periodic lattice heap corruption, cell units, cell normalisation
+  ([`efb0f56`](https://github.com/arunoruto/pyMSTM/commit/efb0f565a61a5ec331809fce5c9a47adb838e720))
+
+- **bindings**: Recompute sphere/plane-boundary matrices on every prepare
+  ([`88bf361`](https://github.com/arunoruto/pyMSTM/commit/88bf361cbdbe578938d5e32a1f9ced789ebabaf5))
+
+- **bindings**: Write compute_tmatrix's T-matrix file to a temporary path
+  ([`d8a1d2a`](https://github.com/arunoruto/pyMSTM/commit/d8a1d2a01633c80cf84b539b0d6462da744aaec3))
+
+- **parser**: Parse total efficiencies of incidence-averaged CLI runs
+  ([`9d6e0a3`](https://github.com/arunoruto/pyMSTM/commit/9d6e0a3e0a1af19656fae87a7c2a0efc12661dfb))
+
+### Build System
+
+- Package metadata and release configuration for 2.0
+  ([`41fa930`](https://github.com/arunoruto/pyMSTM/commit/41fa93006eb5798688c266246788e844917bf73e))
+
+- Trim the MSTM submodule from the sdist
+  ([`4dc8ae6`](https://github.com/arunoruto/pyMSTM/commit/4dc8ae61fade4266d8a536c5910d9659be714985))
+
+- Vendor the modified random_configuration-10.f90 instead of patching it
+  ([`e1345ab`](https://github.com/arunoruto/pyMSTM/commit/e1345ab3441fa9643e1e42b4ee24a312ce277c43))
+
+### Chores
+
+- Add devenv.lock
+  ([`593b1fd`](https://github.com/arunoruto/pyMSTM/commit/593b1fdd8323bf4936198447fca4a33d8801f6e2))
+
+- Drop references to unrelated projects from comments
+  ([`9c75665`](https://github.com/arunoruto/pyMSTM/commit/9c756654d907a504912b078f578dd11583b4f3e3))
+
+### Continuous Integration
+
+- Drop the push-to-main wheel build trigger
+  ([`1ba30ac`](https://github.com/arunoruto/pyMSTM/commit/1ba30acf3346530718df45f8e1c5275d65b39c7e))
+
+- Run the CLI cross-checks, build wheels on build PRs, pin actions
+  ([`c34e216`](https://github.com/arunoruto/pyMSTM/commit/c34e2168b56534caeba046249edef8d96e00aec3))
+
+- Trigger wheel builds on demand instead of every PR push
+  ([`b723b46`](https://github.com/arunoruto/pyMSTM/commit/b723b462151a77b582d5b5057f9af5dfc066c40a))
+
+### Documentation
+
+- Clarify set_spheres `orders` is advisory allocation only
+  ([`e59c0bd`](https://github.com/arunoruto/pyMSTM/commit/e59c0bd66b56927d44c28c51ecb79d42599f6c13))
+
+- README for 2.0, working examples, CITATION.cff
+  ([`f50649b`](https://github.com/arunoruto/pyMSTM/commit/f50649baebbdb2686960c8efbbb3852b4743358b))
+
+- **changelog**: Hand-written 2.0.0 notes, tidy the 1.x entries
+  ([`c52e92f`](https://github.com/arunoruto/pyMSTM/commit/c52e92f5f129076f030da46bfc20129197dd03a3))
+
+- **license**: Separate pyMSTM, MSTM and GNU Fortran runtime licences
+  ([`d20eb31`](https://github.com/arunoruto/pyMSTM/commit/d20eb318e1a11bbcb3a53f54e6768da7a044a676))
+
+### Features
+
+- Add MstmProblem -- unified, pydantic-validated bindings/CLI solver
+  ([`2afb9db`](https://github.com/arunoruto/pyMSTM/commit/2afb9db69bc2675478e7f4298088b0bd69b6a3e0))
+
+- Expose scattering_map_dimension and normalize_s11 in write_inp_file
+  ([`c6acba6`](https://github.com/arunoruto/pyMSTM/commit/c6acba6db3a093e6082394003eb5fb328f674050))
+
+- First-class MSTM CLI invocation (run_mstm), plus real bug fixes
+  ([`ec45bf1`](https://github.com/arunoruto/pyMSTM/commit/ec45bf1f8bb834381e98c6b16015de065ece3b17))
+
+- Package pymstm's Python bindings as a real Nix flake output
+  ([`d7d390e`](https://github.com/arunoruto/pyMSTM/commit/d7d390eb8e17782510ec50dff788dab1a1c1abe5))
+
+- Physical cross sections in a medium, MSTM's normalisation as an option
+  ([`e0fd975`](https://github.com/arunoruto/pyMSTM/commit/e0fd9758c7f57bb03a3d7896318535d425d80545))
+
+- **bindings**: Release the GIL during solves and serialise them with MSTM_LOCK
+  ([`362ec5e`](https://github.com/arunoruto/pyMSTM/commit/362ec5ecf021ea3a8611d5680ad38bf81a00cde5))
+
+- **dask**: MstmTask/solve_task/run_dask for distributed independent solves
+  ([`b61d12b`](https://github.com/arunoruto/pyMSTM/commit/b61d12b0a49a61a295186e13c312bff24f75a82f))
+
+### Refactoring
+
+- Remove dead and unsafe API surface
+  ([`c9301ef`](https://github.com/arunoruto/pyMSTM/commit/c9301effee894ca9bd4039eef33444e0377821ea))
+
+- Rename MSTM->MstmBindings, MstmProblem->MSTM
+  ([`8de8ec8`](https://github.com/arunoruto/pyMSTM/commit/8de8ec8c8952b5f7f8344a2a30ec6ad7f7a88178))
+
+### Testing
+
+- Run the f2py wrapper tests, drop the sys.path hack
+  ([`9ad949b`](https://github.com/arunoruto/pyMSTM/commit/9ad949b28cc3041c11571d4c067fb2786af15b55))
+
+- **cli**: Point the mstm-mpi skip message at the flake package
+  ([`a492aaa`](https://github.com/arunoruto/pyMSTM/commit/a492aaa5e25495a02891e0f9188794f947c58d3d))
+
+### Breaking Changes
+
+- Get_scattering_matrix(), MstmBindings(library_path=), set_incident(direction=),
+  MSTM.incident_direction, pymstm._build and the `dashboard` extra no longer exist.
+
+- With medium_ref_index != 1, efficiencies from MstmBindings, MSTM and solve_task are now physical,
+  i.e. divided by Re(n_medium) compared with 1.x (by Re(n_medium)^2 for get_mie_efficiencies()).
+  Pass cross_section_convention="mstm" for the previous numbers.
+
+
 ## 2.0.0 release notes
 
 pyMSTM 2.0 adds a high-level, validated `MSTM` model that runs through the
