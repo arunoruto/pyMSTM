@@ -1,0 +1,92 @@
+{
+  "nodes": {
+    "devenv": {
+      "locked": {
+        "dir": "src/modules",
+        "lastModified": 1783972995,
+        "narHash": "sha256-BIti2dNiCWjOpemU6z0sKaSa214XwdynXckvX5Sirkk=",
+        "owner": "cachix",
+        "repo": "devenv",
+        "rev": "32f6747aabbd5aeb7413bae53d7e01e224ec77bc",
+        "type": "github"
+      },
+      "original": {
+        "dir": "src/modules",
+        "owner": "cachix",
+        "repo": "devenv",
+        "type": "github"
+      }
+    },
+    "mstm": {
+      "inputs": {
+        "mstm-src": "mstm-src",
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "path": ".",
+        "type": "path"
+      },
+      "original": {
+        "path": ".",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "mstm-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1707426109,
+        "narHash": "sha256-IjCYT6+fAS9Fysn/+v7CzpaUewPqT6k62HaevSBVp6g=",
+        "owner": "dmckwski",
+        "repo": "MSTM",
+        "rev": "a0c982121cf9ac352531f4816639a07d814385bd",
+        "type": "github"
+      },
+      "original": {
+        "owner": "dmckwski",
+        "repo": "MSTM",
+        "rev": "a0c982121cf9ac352531f4816639a07d814385bd",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1783703440,
+        "narHash": "sha256-O3/YajjWo001VUIgD8BwaRdSNLUFe7nZ1qV5TwhRBcw=",
+        "rev": "8f0500b9660505dc3cb647775fe9a978a74b5283",
+        "revCount": 1008950,
+        "type": "tarball",
+        "url": "https://api.flakehub.com/f/pinned/NixOS/nixpkgs/0.2605.1008950%2Brev-8f0500b9660505dc3cb647775fe9a978a74b5283/019f524e-086b-7663-9920-faf4fe5cefed/source.tar.gz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://flakehub.com/f/NixOS/nixpkgs/0"
+      }
+    },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1783776592,
+        "narHash": "sha256-UgCQzxeWI75XM8G+hPrPh+MKzEPjG3SpAj7dtqSbksA=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "e7a3ca8092b61ff85b6a45bf863ea2b2d6a661b3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "devenv": "devenv",
+        "mstm": "mstm",
+        "nixpkgs": "nixpkgs_2"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
