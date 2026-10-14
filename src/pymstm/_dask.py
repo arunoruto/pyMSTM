@@ -3,7 +3,7 @@
 One :class:`MstmTask` = one serial solve (one geometry at one wavelength).
 :func:`solve_task` runs it under :data:`~pymstm._mstm.MSTM_LOCK` and
 returns a small dict; :func:`run_dask` maps it over a ``distributed``
-cluster, mirroring ``pyfastmm._dask.run_resolved_dask``'s client handling.
+cluster.
 
 ``distributed`` is only imported inside :func:`run_dask` (install the
 ``dask`` extra), so ``solve_task`` works without it.
@@ -171,12 +171,11 @@ def run_dask(
 ) -> list[dict[str, Any]]:
     """Solve every task on a Dask cluster; results in task order.
 
-    Cluster selection as ``pyfastmm._dask.run_resolved_dask``: *client*
-    (used as-is, never closed), else *scheduler_address* (e.g.
-    ``"tcp://host:8786"``), else a temporary ``LocalCluster``; a client
-    created here is closed on the way out. ``progress_callback(fraction,
-    index)`` is called per completed task, from this thread. The first
-    failed task raises.
+    Cluster selection: *client* (used as-is, never closed), else
+    *scheduler_address* (e.g. ``"tcp://host:8786"``), else a temporary
+    ``LocalCluster``; a client created here is closed on the way out.
+    ``progress_callback(fraction, index)`` is called per completed task,
+    from this thread. The first failed task raises.
     """
     try:
         import distributed

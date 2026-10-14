@@ -11,8 +11,9 @@ import pytest
 
 from pymstm import MstmBindings, MstmTask, solve_task
 
-KS = 2 * math.pi * 1.8476 / 1000  # lengths in nm, lambda = 1000 nm, olivine host
-M_REL = (2.868 + 4.192j) / 1.8476  # iron in olivine
+N_HOST = 1.8476
+KS = 2 * math.pi * N_HOST / 1000  # lengths in nm, lambda = 1000 nm, relative setup
+M_REL = (2.868 + 4.192j) / N_HOST  # absorbing spheres
 
 
 def lattice_task(n, cell, ks=KS):

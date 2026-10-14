@@ -170,12 +170,10 @@ class MSTM(BaseModel):
         if self.compute_mueller and self.cli and self.incident_beta_deg != 0.0:
             # mstm-cli's own scattering-matrix text table is structurally a
             # single fixed lab-frame meridian plane (no per-angle query to
-            # rotate the way the bindings' get_scattering_angle() allows --
-            # see pymstm._cli's docs and t-bench's mstm_cli.py adapter for
-            # the same, independently-confirmed limitation), so it can only
-            # correctly report the Mueller matrix for zero-polar-angle
-            # incidence. Reject rather than silently return an angularly
-            # wrong result.
+            # rotate the way the bindings' get_scattering_angle() allows),
+            # so it can only correctly report the Mueller matrix for
+            # zero-polar-angle incidence. Reject rather than silently return
+            # an angularly wrong result.
             raise ValueError(
                 "compute_mueller=True with cli=True requires "
                 "incident_beta_deg=0.0 -- mstm-cli's scattering-matrix "
@@ -260,10 +258,9 @@ class MSTM(BaseModel):
         # coordinates, not relative to the incident direction (see its
         # docstring) -- rotate each desired (theta_rel, phi_rel=0) point
         # into the lab frame via the same R = Rz(alpha).Ry(beta) that
-        # defines MSTM's own incident-wave convention before calling it.
-        # Verified this exact approach against FaSTMM2 to 3-4 significant
-        # figures for a tilted-incidence case in a separate project
-        # (t-bench) built on this same package.
+        # defines MSTM's own incident-wave convention before calling it
+        # (checked against FaSTMM2 to 3-4 significant figures for a
+        # tilted-incidence case).
         alpha_rad = math.radians(self.incident_alpha_deg)
         beta_rad = math.radians(self.incident_beta_deg)
         cos_a, sin_a = math.cos(alpha_rad), math.sin(alpha_rad)
@@ -345,8 +342,8 @@ class MSTM(BaseModel):
             # (k=1.0 for the same "already in native MSTM units" reason).
             #
             # mstm-cli's own text table is always a fixed -180..180deg,
-            # 1deg-resolution grid (confirmed elsewhere this session to be
-            # unaffected by any .inp keyword) -- NOT self.n_theta points.
+            # 1deg-resolution grid (unaffected by any .inp keyword) -- NOT
+            # self.n_theta points.
             # Resample onto the exact same uniform n_theta grid the
             # bindings backend uses (nearest available integer-degree
             # angle) so the two backends' mueller lists are directly,
