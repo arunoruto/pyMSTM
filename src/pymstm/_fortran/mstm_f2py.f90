@@ -645,9 +645,11 @@ end subroutine mstm_scattering_angle
 
 
 !
-!  Compute the T-matrix for the current cluster (writes/reads a temp file
-!  internally, "tmatrix_temp.dat", identical to the pre-migration
-!  behavior -- not something callers interact with directly).
+!  Compute the T-matrix for the current cluster. MSTM's tmatrix_solution
+!  writes it to a file, read back here.
+!    tmatrix_file -- path of that file (at most 128 characters, MSTM's own
+!                     limit); the Python wrapper passes a temporary path
+!                     unless the caller wants to keep the file
 !    n            -- number of spheres (for sizing q_ext/q_abs; see
 !                     mstm_solve's docstring for why this can't be
 !                     sized off the module's own number_spheres directly)
@@ -660,10 +662,11 @@ end subroutine mstm_scattering_angle
 !                     which has no Fortran-side dependency beyond
 !                     t_matrix_order and is better reimplemented in Python.
 !
-subroutine mstm_compute_tmatrix(tmatrix_data, tmat_order, q_ext, q_abs, &
-        status, n, array_len)
+subroutine mstm_compute_tmatrix(tmatrix_file, tmatrix_data, tmat_order, &
+        q_ext, q_abs, status, n, array_len)
     !f2py threadsafe
     implicit none
+    character(len=*), intent(in) :: tmatrix_file
     integer, intent(in) :: n, array_len
     real(8), intent(out) :: tmatrix_data(array_len)
     integer, intent(out) :: tmat_order, status
@@ -673,7 +676,7 @@ subroutine mstm_compute_tmatrix(tmatrix_data, tmat_order, q_ext, q_abs, &
     real(8) :: re, im
     character*128 :: tmatfile
 
-    tmatfile = 'tmatrix_temp.dat'
+    tmatfile = tmatrix_file
     t_matrix_output_file = tmatfile
 
     allocate(qeff_local(3, n))

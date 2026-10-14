@@ -302,3 +302,4 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+tmatrix_temp.dat
