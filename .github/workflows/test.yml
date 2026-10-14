@@ -1,49 +1,64 @@
 name: Testing
+
+# The test suite, including the cross-checks against MSTM's own
+# command-line program, built from the same december2023 sources
+# (`make cli` -> build/mstm).
+
 on:
   workflow_call:
   workflow_dispatch:
-  pull_request:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "tools/**"
+      - "external/**"
+      - "meson.build"
+      - "Makefile"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/test.yml"
+
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
 jobs:
   unittest:
     name: PyTest
     runs-on: ubuntu-latest
+    env:
+      PYMSTM_MSTM_BIN: ${{ github.workspace }}/build/mstm
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v7
         with:
           submodules: recursive
+
       - name: Install gfortran
-        # Needed for `uv sync` to build the f2py extension (meson-python
-        # drives numpy.f2py -c against external/mstm/, see meson.build).
+        # `uv sync` builds the f2py extension (meson-python runs numpy.f2py
+        # against external/mstm, see meson.build).
         run: sudo apt-get update && sudo apt-get install -y gfortran
+
       - name: Install uv
-        id: setup-python
-        uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: true
+        uses: astral-sh/setup-uv@v10.2.0
+
       - name: Install dependencies (builds the f2py extension)
-        run: uv sync --extra dev
-      - name: Cache | MSTM CLI reference binary
+        run: uv sync --extra dev --extra dask
+
+      - name: Cache the MSTM CLI
         id: cache-cli
         uses: actions/cache@v4
         with:
           path: build/mstm
-          # external/mstm is a git submodule pinned to a fixed commit in
-          # .gitmodules -- it essentially never changes between runs, so
-          # hashing its checked-out content (plus the Makefile that
-          # compiles it) is a reliable "did the CLI's own inputs change"
-          # key, letting most runs skip recompiling it entirely.
           key: ${{ runner.os }}-mstm-cli-${{ hashFiles('external/mstm/december2023/**', 'Makefile') }}
 
-      - name: Build the standalone MSTM CLI reference binary
-        # test_compatibility.py skips itself if this isn't present -- but
-        # we want that cross-check to actually run in CI, not silently
-        # skip. Skipped entirely on a cache hit above -- `make`'s own
-        # mtime-based staleness check isn't reliable here since a fresh
-        # checkout + cache restore don't produce trustworthy relative
-        # timestamps between sources and the cached binary.
+      - name: Build the MSTM CLI
+        # Without it the cross-checks against the CLI skip themselves.
         if: steps.cache-cli.outputs.cache-hit != 'true'
         run: make cli
-      - name: Test with pytest
-        run: uv run pytest tests/ -v
+
+      - name: Run the tests
+        run: uv run pytest -v -rs
