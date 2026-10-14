@@ -92,6 +92,10 @@ mstm_ext = custom_target(
   install_dir: py.get_install_dir(pure: false) / 'pymstm',
 )
 
+# The sdist (meson dist, which also copies the git submodule) only needs
+# the december2023 sources; see tools/trim_sdist.py.
+meson.add_dist_script(py, files('tools' / 'trim_sdist.py'))
+
 # --- Pure Python package ---
 
 python_sources = [
