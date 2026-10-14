@@ -46,7 +46,7 @@ jobs:
         uses: astral-sh/setup-uv@v10.2.0
 
       - name: Install dependencies (builds the f2py extension)
-        run: uv sync --extra dev --extra dask
+        run: uv sync --extra dask
 
       - name: Cache the MSTM CLI
         id: cache-cli

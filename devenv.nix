@@ -12,9 +12,9 @@
   # which shells out to `numpy.f2py -c` (tools/build_f2py_ext.py) against
   # the git submodule at external/mstm/. That needs, at minimum, gfortran
   # on PATH -- provided below. meson, ninja, and meson-python itself are
-  # Python-level build requirements pulled in via the `dev` extra in
+  # Python-level build requirements from the `dev` dependency group in
   # pyproject.toml, installed into this shell's venv by
-  # languages.python.uv.sync (allExtras below) rather than as Nix packages
+  # languages.python.uv.sync rather than as Nix packages
   # -- pyproject.toml's [tool.uv] no-build-isolation-package = ["pymstm"]
   # requires them to live in *this* persistent venv (not an ephemeral
   # isolated build env), since meson-python's editable-install rebuild

@@ -35,4 +35,7 @@ __all__ = [
     "MstmPerSphereResult",
     "MstmMuellerPoint",
 ]
-__version__ = "1.1.0"
+
+from importlib.metadata import version as _version
+
+__version__ = _version("pymstm")

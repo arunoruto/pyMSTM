@@ -203,7 +203,7 @@ pyMSTM does not support them.
 ```bash
 git clone --recurse-submodules https://github.com/arunoruto/pyMSTM.git
 cd pyMSTM
-uv sync --extra dev --extra dask   # builds the extension (needs gfortran)
+uv sync --extra dask              # builds the extension (needs gfortran)
 make cli                           # optional: the CLI for the cross-checks
 PYMSTM_MSTM_BIN=build/mstm uv run pytest
 ```
