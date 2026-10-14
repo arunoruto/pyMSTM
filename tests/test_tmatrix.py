@@ -16,7 +16,7 @@ def dimer_mstm():
         ref_im=[0.01, 0.01],
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=500)
     m.prepare()
     return m

@@ -239,7 +239,7 @@ def test_solve_matches_ctypes_path():
         ref_im=[0.0, 0.0],
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.prepare()
     r = m.solve()

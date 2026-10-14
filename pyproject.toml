@@ -47,7 +47,6 @@ dependencies = [
 # the release runs entirely via the official PSR GitHub Action (see
 # .github/workflows/publish.yml), which bundles it.
 dev = ["pytest>=7", "pytest-cov", "meson>=1.1", "ninja", "meson-python>=0.18"]
-dashboard = ["streamlit>=1.28", "pandas>=2.0", "plotly>=5.0"]
 # Distributed solves (pymstm.run_dask) -- optional: solve_task/MstmTask
 # need nothing extra, and tests/test_dask.py skips without it.
 dask = ["distributed>=2024.1"]

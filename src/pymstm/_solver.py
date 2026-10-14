@@ -111,7 +111,6 @@ class MSTM(BaseModel):
 
     incident_alpha_deg: float = 0.0
     incident_beta_deg: float = 0.0
-    incident_direction: int = 1
 
     solution_eps: float = 1e-6
     max_iterations: int = 5000
@@ -209,7 +208,6 @@ class MSTM(BaseModel):
             m.set_incident(
                 alpha_deg=self.incident_alpha_deg,
                 beta_deg=self.incident_beta_deg,
-                direction=self.incident_direction,
             )
             m.set_solver_params(eps=self.solution_eps, max_iter=self.max_iterations)
             m.set_mie_eps(self.mie_eps)
@@ -297,7 +295,6 @@ class MSTM(BaseModel):
             medium_ref_im=self.medium_ref_im,
             alpha_deg=self.incident_alpha_deg,
             beta_deg=self.incident_beta_deg,
-            incident_direction=self.incident_direction,
             solution_eps=self.solution_eps,
             max_iterations=self.max_iterations,
             mie_eps=self.mie_eps,

@@ -40,7 +40,6 @@ import os
 import shutil
 import tempfile
 import threading
-import warnings
 
 import numpy as np
 
@@ -83,10 +82,7 @@ class MstmBindings:
     # instances raise instead of silently using (or freeing) its arrays.
     _owner = None
 
-    def __init__(self, library_path=None):  # type: (str | None) -> None
-        # library_path is accepted for backward-compatible call signatures
-        # but is unused -- the f2py extension is a single compiled module,
-        # not a runtime-loadable shared library path.
+    def __init__(self):
         self._nspheres = 0
         self._prepared = False
         self._solved = False
@@ -157,7 +153,7 @@ class MstmBindings:
         """Set the surrounding medium refractive index (default: vacuum, 1+0i)."""
         self._ext.mstm_f2py_bindings.mstm_set_medium_ref(ref_re, ref_im)
 
-    def set_incident(self, alpha_deg=0.0, beta_deg=0.0, direction=1):
+    def set_incident(self, alpha_deg=0.0, beta_deg=0.0):
         """Set the incident plane wave direction.
 
         Parameters
@@ -166,14 +162,10 @@ class MstmBindings:
             Azimuthal angle in degrees (rotation about y-axis before beta).
         beta_deg : float
             Polar angle in degrees (0 = forward along +z, 90 = perpendicular).
-        direction : int
-            Accepted for backward-compatible call signatures but ignored.
-            The actual propagation direction is derived from beta_deg via
-            Snell's law once the medium/layer refractive indices are known
-            (in prepare()), matching the MSTM CLI's own logic. The old
-            ctypes-era wrapper took this as a caller-supplied value and
-            never re-derived it -- a latent bug (see mstm_set_incident's
-            docstring in mstm_f2py.f90) fixed during the f2py migration.
+            Above 90 the wave comes from the far side (+z towards -z), as in
+            the MSTM CLI, which derives its ``incident_direction`` from
+            ``incident_beta_deg`` the same way (in ``prepare()``, once the
+            medium and layer refractive indices are known).
         """
         self._ext.mstm_f2py_bindings.mstm_set_incident(alpha_deg, beta_deg)
 
@@ -362,53 +354,6 @@ class MstmBindings:
             raise RuntimeError("Not solved. Call solve() first.")
 
         return self._ext.mstm_f2py_bindings.mstm_scattering_angle(costheta, phi)
-
-    def get_scattering_matrix(self):
-        """Get the full scattering matrix over all computed angles.
-
-        .. warning::
-            **This method has a confirmed, non-deterministic memory-safety
-            bug** in the underlying Fortran binding (garbage/denormal/
-            negative-S11 values that vary across repeated calls within
-            the same process, even with identical inputs). Root-caused to
-            likely an uninitialized Fortran local variable somewhere in
-            the call chain feeding this array (NOT in the underlying
-            ``scatteringmatrix()`` physics routine itself, which is
-            proven correct -- :meth:`get_scattering_angle` calls the
-            exact same routine and is 100% deterministic/reliable).
-            **Prefer looping over angles with** :meth:`get_scattering_angle`
-            **instead**, which does not exhibit this bug. This method is
-            kept only for backward compatibility and emits a
-            ``RuntimeWarning`` on every call.
-
-        Returns
-        -------
-        angles : ndarray, shape (n_angles,)
-            Cosine of the scattering angles (linear in scattering angle in degrees).
-        smatrix : ndarray, shape (32, n_angles)
-            Scattering matrix elements. First 16 rows = upward scattering,
-            rows 17-32 = downward scattering.
-        """
-        if not self._solved:
-            raise RuntimeError("Not solved. Call solve() first.")
-
-        warnings.warn(
-            "get_scattering_matrix() has a known non-deterministic "
-            "memory-safety bug (values vary across repeated calls with "
-            "identical inputs, even within the same process). Prefer "
-            "looping over get_scattering_angle() instead. See this "
-            "method's docstring for details.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-
-        ii = self._ext.inputinterface
-        smat = np.asarray(ii.scat_mat)
-        na = smat.shape[1]
-        angles_deg = np.linspace(ii.scat_mat_amin, ii.scat_mat_amax, na)
-        costheta = np.cos(angles_deg * np.pi / 180.0)
-
-        return costheta, smat
 
     def get_number_of_equations(self):
         """Return the number of equations in the linear system."""

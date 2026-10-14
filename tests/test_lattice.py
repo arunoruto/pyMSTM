@@ -46,7 +46,7 @@ def _solve(n, cell=None):
     m.set_medium_ref(1.0, 0.0)
     if cell:
         m.set_lattice(cell_width_x=cell, cell_width_y=cell)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-8, max_iter=5000)
     m.prepare()
     r = m.solve()
@@ -78,7 +78,7 @@ def _solve_layered(z, n):
     m = MstmBindings()
     m.set_spheres([2.0] * n, [[4.5 * i, 0, z] for i in range(n)], [5] * n, [2.0] * n, [0.01] * n)
     m.set_layers(thicknesses=[], ref_indices=[(1.0, 0.0), (1.5, 0.0)])
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-8, max_iter=5000)
     m.prepare()
     r = m.solve()

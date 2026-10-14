@@ -100,7 +100,6 @@ meson.add_dist_script(py, files('tools' / 'trim_sdist.py'))
 
 python_sources = [
   'src' / 'pymstm' / '__init__.py',
-  'src' / 'pymstm' / '_build.py',
   'src' / 'pymstm' / '_cli.py',
   'src' / 'pymstm' / '_config.py',
   'src' / 'pymstm' / '_convert.py',
