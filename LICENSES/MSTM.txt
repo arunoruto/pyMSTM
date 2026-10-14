@@ -1,0 +1,61 @@
+MSTM (Multiple Sphere T-Matrix), by Daniel Mackowski
+https://github.com/dmckwski/MSTM
+
+The compiled extension pymstm._mstm_ext is built from the MSTM Fortran
+sources (external/mstm/december2023, plus pyMSTM's modified copy
+src/pymstm/_fortran/random_configuration-10.f90 and the patch under
+src/pymstm/_fortran/patches/). MSTM is distributed under the MIT licence:
+
+==============================================================================
+
+MIT License
+
+Copyright (c) 2022 Daniel Mackowski
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+
+The MSTM sources contain routines by third parties, under these notices:
+
+1. Special functions (CH12N, and the Bessel/Hankel routines next to it, in
+   mstm-modules-33.f90), from Shanjie Zhang and Jianming Jin, Computation
+   of Special Functions, Wiley, 1996, ISBN 0-471-11963-6:
+
+     This routine is copyrighted by Shanjie Zhang and Jianming Jin.
+     However, they give permission to incorporate this routine into a user
+     program provided that the copyright is acknowledged.
+
+2. QNG (mstm-modules-33.f90), non-adaptive integration from QUADPACK by
+   Robert Piessens, Elise de Doncker-Kapenger, Christian Ueberhuber and
+   David Kahaner (QUADPACK, a Subroutine Package for Automatic
+   Integration, Springer, 1983). QUADPACK is in the public domain.
+
+3. Levenberg-Marquardt least squares (lmfit.f90), from MINPACK by Jorge
+   More, Burton Garbow and Kenneth Hillstrom (User Guide for MINPACK-1,
+   Argonne National Laboratory, ANL-80-74, 1980), FORTRAN90 version by
+   John Burkardt:
+
+     This code may freely be copied, modified, and used for any purpose.
+
+Upstream MSTM's random_configuration-10.f90 also contains hpsort_eps_epw,
+adapted from GPL-licensed Quantum ESPRESSO/EPW code. pyMSTM neither
+compiles nor distributes it: the extension is built from pyMSTM's copy of
+that file, in which the routine is replaced by an independent heapsort,
+and the file is removed from pyMSTM's source distribution.

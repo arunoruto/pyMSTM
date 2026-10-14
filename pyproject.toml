@@ -14,8 +14,10 @@ readme = "README.md"
 # the floor matches what the wheels actually cover -- see
 # [tool.cibuildwheel] `build` below (cp311 through cp314).
 requires-python = ">=3.11"
-license = "MIT"
-license-files = ["LICENSE"]
+# The extension is MIT (pyMSTM, MSTM); the Linux wheels also bundle the GNU
+# Fortran runtime (libgfortran, libquadmath). See LICENSES/.
+license = "MIT AND GPL-3.0-or-later WITH GCC-exception-3.1 AND LGPL-2.1-or-later"
+license-files = ["LICENSE", "LICENSES/*"]
 authors = [{ name = "pymstm contributors" }]
 keywords = ["t-matrix", "scattering", "electromagnetics", "mie", "optics"]
 classifiers = [
@@ -44,7 +46,7 @@ dependencies = [
 # in it. No separate `build` extra for python-semantic-release anymore --
 # the release runs entirely via the official PSR GitHub Action (see
 # .github/workflows/publish.yml), which bundles it.
-dev = ["pytest>=7", "pytest-cov", "meson>=1.1", "ninja", "meson-python>=0.15"]
+dev = ["pytest>=7", "pytest-cov", "meson>=1.1", "ninja", "meson-python>=0.18"]
 dashboard = ["streamlit>=1.28", "pandas>=2.0", "plotly>=5.0"]
 # Distributed solves (pymstm.run_dask) -- optional: solve_task/MstmTask
 # need nothing extra, and tests/test_dask.py skips without it.
@@ -146,5 +148,5 @@ no-build-isolation-package = ["pymstm"]
 # *before* pymstm itself is built (see [tool.uv] no-build-isolation-package
 # above) -- meson/ninja come from the `dev` extra, numpy from the runtime
 # dependencies, gfortran from the devenv/nix shell.
-requires = ["meson-python>=0.15", "numpy>=1.25"]
+requires = ["meson-python>=0.18", "numpy>=1.25"]
 build-backend = "mesonpy"
