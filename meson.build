@@ -122,6 +122,7 @@ python_sources = [
   'src' / 'pymstm' / '_cli.py',
   'src' / 'pymstm' / '_config.py',
   'src' / 'pymstm' / '_convert.py',
+  'src' / 'pymstm' / '_dask.py',
   'src' / 'pymstm' / '_inp.py',
   'src' / 'pymstm' / '_inp_parser.py',
   'src' / 'pymstm' / '_mstm.py',
