@@ -515,7 +515,11 @@ class MstmBindings:
         Parameters
         ----------
         cell_width_x, cell_width_y : float
-            Unit cell dimensions in x and y.
+            Unit cell dimensions in x and y, in the same length units as
+            the sphere radii/positions (scaled by ``set_length_scale()``,
+            so call that first, as for ``set_spheres()``). With a lattice,
+            ``qext_tot``/``qabs_tot``/``qsca_tot`` are per unit-cell area
+            (``qabs_tot`` is the CLI's unit-cell absorptance).
         phase_shift : bool
             Use phase-shifted lattice sums.
         finite : bool

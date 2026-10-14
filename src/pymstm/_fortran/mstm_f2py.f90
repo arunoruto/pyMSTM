@@ -314,7 +314,13 @@ end subroutine mstm_set_layer_ref_index
 
 !
 !  Set periodic lattice configuration.
-!  cell_wx, cell_wy = x and y dimensions of the unit cell
+!  cell_wx, cell_wy = x and y dimensions of the unit cell, in the same
+!                     length units as the sphere radii/positions: scaled by
+!                     length_scale_factor here, exactly like mstm_set_spheres
+!                     does for radii/positions and the CLI does for
+!                     cell_width (mstm-input-37.f90 ~1081). Unscaled, a cell
+!                     given in nm was used as if in size-parameter units
+!                     (~1/length_scale_factor times too large).
 !  phase_shift = whether to use phase-shifted lattice
 !  finite = whether to use finite (truncated) lattice
 !
@@ -323,8 +329,8 @@ subroutine mstm_set_lattice(cell_wx, cell_wy, phase_shift, finite_lat)
     real(8), intent(in) :: cell_wx, cell_wy
     integer, intent(in) :: phase_shift, finite_lat
     periodic_lattice = .true.
-    cell_width(1) = cell_wx
-    cell_width(2) = cell_wy
+    cell_width(1) = cell_wx * length_scale_factor
+    cell_width(2) = cell_wy * length_scale_factor
     phase_shift_form = (phase_shift /= 0)
     finite_lattice = (finite_lat /= 0)
 end subroutine mstm_set_lattice
@@ -427,6 +433,13 @@ subroutine mstm_prepare()
         incident_sin_beta, &
         incident_direction)
 
+    ! Periodic lattice: efficiencies are per unit-cell area (projected onto
+    ! the incidence direction), as in the CLI (mstm-input-37.f90 ~1213,1378).
+    if (periodic_lattice) then
+        cross_section_radius = sqrt(product(cell_width) / pi) &
+            * sqrt(cos(incident_beta))
+    endif
+
     ! Set qeff_dim
     qeff_dim = 3
 
@@ -449,7 +462,29 @@ subroutine mstm_prepare()
     amnp_0 = (0.d0, 0.d0)
 
     ! Allocate scattering matrix if needed
-    if (calculate_scattering_matrix) then
+    if (calculate_scattering_matrix .and. periodic_lattice) then
+        ! A lattice "scattering matrix" is one 32-row column per propagating
+        ! reciprocal-lattice direction (plus their k-vectors in rl_vec), and
+        ! that count grows ~ cell area / wavelength^2. Sized by the same dry
+        ! run as the CLI (mstm-input-37.f90 ~1332). Previously scat_mat kept
+        ! the fixed angular-grid shape (32, -15:15) and rl_vec stayed
+        ! unallocated, so periodic_lattice_scattering (scat_mat(32,*),
+        ! assumed-size, no bounds check possible) wrote past the end of
+        ! scat_mat as soon as a cell had > 31 propagating orders: heap
+        ! corruption ("double free or corruption", "munmap_chunk()").
+        call periodic_lattice_scattering(amnp_s, pl_sca, dry_run=.true., &
+            num_dirs=number_rl_dirs)
+        max_number_rl_dirs = maxval(number_rl_dirs)
+        if (allocated(rl_vec)) deallocate(rl_vec)
+        allocate(rl_vec(2, max_number_rl_dirs))
+        rl_vec = 0.d0
+        scat_mat_ldim = 1
+        scat_mat_udim = max_number_rl_dirs
+        scat_mat_mdim = 32
+        if (allocated(scat_mat)) deallocate(scat_mat)
+        allocate(scat_mat(scat_mat_mdim, scat_mat_ldim:scat_mat_udim))
+        scat_mat = 0.d0
+    elseif (calculate_scattering_matrix) then
         scat_mat_ldim = -scattering_map_dimension
         scat_mat_udim = scattering_map_dimension
         scat_mat_mdim = 16 + 16
@@ -534,7 +569,10 @@ subroutine mstm_solve(q_ext, q_abs, q_sca, qext_tot, qabs_tot, &
 
     ! If we have single origin + scattering matrix, compute it
     if (calculate_scattering_matrix .and. allocated(scat_mat)) then
-        if (allocated(amnp_0)) then
+        ! Lattice scattering is a multiple-origin (per-sphere) expansion:
+        ! periodic_lattice_scattering reads amnp as amnp(number_eqns,2), so
+        ! it must get amnp_s, never the (smaller) common-origin amnp_0.
+        if (allocated(amnp_0) .and. .not. periodic_lattice) then
             call scattering_matrix_calculation(amnp_0, scat_mat, &
                 mpi_comm=mpi_comm_world)
         else
