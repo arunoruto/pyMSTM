@@ -33,7 +33,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence
 
 import numpy as np
 
@@ -55,6 +55,10 @@ class MstmTask:
         host when ``medium_ref_index`` is 1). A scalar broadcasts.
     medium_ref_index : complex
         Medium refractive index (MSTM ``medium_ref_index``).
+    cross_section_convention : {"physical", "mstm"}
+        Efficiency normalisation with a non-vacuum medium; see
+        :class:`~pymstm.MstmBindings`. ``"physical"`` (default) divides
+        MSTM's efficiencies by ``Re(medium_ref_index)``.
     length_scale : float
         MSTM ``length_scale_factor``: multiplies radii, positions and the
         lattice cell, e.g. ``2*pi*n_host/wavelength`` for lengths in nm.
@@ -72,6 +76,7 @@ class MstmTask:
     positions: Sequence[Sequence[float]]
     ref_index: complex | Sequence[complex]
     medium_ref_index: complex = 1.0
+    cross_section_convention: Literal["physical", "mstm"] = "physical"
     length_scale: float = 1.0
     cell: tuple[float, float] | None = None
     orders: Sequence[int] | None = None
@@ -108,7 +113,7 @@ def solve_task(task: MstmTask, isolate: bool = False) -> dict[str, Any]:
         orders = np.maximum(4, (x + 4 * np.cbrt(x) + 2).astype(int))
     t0 = time.perf_counter()
     with MSTM_LOCK:
-        m = MstmBindings()
+        m = MstmBindings(cross_section_convention=task.cross_section_convention)
         try:
             m.set_length_scale(task.length_scale)
             m.set_spheres(radii, task.positions, orders, m_rel.real, m_rel.imag)

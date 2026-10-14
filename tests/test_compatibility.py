@@ -541,7 +541,8 @@ def test_medium_ref_index(tmp_path):
     )
     mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
-    m = MstmBindings()
+    # The CLI prints MSTM's own normalisation.
+    m = MstmBindings(cross_section_convention="mstm")
     m.set_spheres(
         radii=radii, positions=positions, orders=[8], ref_re=ref_re, ref_im=ref_im
     )

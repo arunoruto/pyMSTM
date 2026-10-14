@@ -75,14 +75,49 @@ class MstmBindings:
     prepare()/solve()/finalize()) giving access to every individual MSTM
     capability. For a higher-level, pydantic-validated interface that
     also supports the standalone CLI binary as an alternate backend, see
-    :class:`pymstm.MSTM`."""
+    :class:`pymstm.MSTM`.
+
+    Only one instance can be used at a time (the most recently created
+    one): MSTM's state is process-global. Threads sharing a process must
+    hold :data:`MSTM_LOCK` around a whole set->prepare->solve sequence.
+
+    Parameters
+    ----------
+    cross_section_convention : {"physical", "mstm"}
+        Normalisation of the efficiencies returned by :meth:`solve`,
+        :meth:`compute_tmatrix` and :meth:`get_mie_efficiencies`. They
+        differ only when the medium is not vacuum.
+
+        - ``"physical"`` (default): cross sections per incident irradiance
+          in the medium, e.g. a single sphere gives the Lorenz-Mie
+          efficiencies in the host (``Q_ext -> 2`` for large spheres).
+        - ``"mstm"``: MSTM's own numbers, as the MSTM CLI prints them.
+          With a medium refractive index ``n`` (``set_medium_ref``, or
+          layer 0 of ``set_layers``) MSTM normalises by the irradiance of
+          the same field amplitude in vacuum, so its extinction,
+          absorption and scattering efficiencies (totals and per sphere,
+          and with a lattice the unit-cell values) are ``Re(n)`` times the
+          physical ones; :meth:`get_mie_efficiencies` are ``Re(n)**2``
+          times. ``"physical"`` divides by these factors, using ``Re(n)``
+          of layer 0 as MSTM itself does when it normalises the
+          scattering matrix.
+
+        The scattering matrix (:meth:`get_scattering_angle`) is MSTM's
+        either way; see its Notes.
+    """
 
     # MSTM keeps all state in process-global Fortran module variables, so
     # only one instance can own it: the most recently created one. Older
     # instances raise instead of silently using (or freeing) its arrays.
     _owner = None
 
-    def __init__(self):
+    def __init__(self, cross_section_convention="physical"):
+        if cross_section_convention not in ("physical", "mstm"):
+            raise ValueError(
+                "cross_section_convention must be 'physical' or 'mstm', "
+                f"got {cross_section_convention!r}"
+            )
+        self.cross_section_convention = cross_section_convention
         self._nspheres = 0
         self._prepared = False
         self._solved = False
@@ -100,6 +135,13 @@ class MstmBindings:
                 "recently created MstmBindings can be used"
             )
         return _ext
+
+    def _efficiency_factor(self):
+        """What MSTM's efficiencies are divided by under the selected
+        convention: Re(n) of the incident medium (layer 0), or 1."""
+        if self.cross_section_convention == "mstm":
+            return 1.0
+        return float(self._ext.surface_subroutines.layer_ref_index[0].real)
 
     def set_spheres(self, radii, positions, orders, ref_re, ref_im):
         """Set sphere data for the cluster.
@@ -150,7 +192,15 @@ class MstmBindings:
         self._solved = False
 
     def set_medium_ref(self, ref_re, ref_im=0.0):
-        """Set the surrounding medium refractive index (default: vacuum, 1+0i)."""
+        """Set the surrounding medium refractive index (default: vacuum, 1+0i).
+
+        Sphere refractive indices stay absolute, and lengths stay in units
+        of ``1 / k0`` (vacuum wavenumber) after ``set_length_scale``. The
+        equivalent "relative" setup is a vacuum medium with sphere indices
+        ``m / n`` and lengths scaled by ``n``; for a non-absorbing medium
+        it gives the same efficiencies as this one under
+        ``cross_section_convention="physical"``.
+        """
         self._ext.mstm_f2py_bindings.mstm_set_medium_ref(ref_re, ref_im)
 
     def set_incident(self, alpha_deg=0.0, beta_deg=0.0):
@@ -252,6 +302,13 @@ class MstmBindings:
     def solve(self):
         """Run the fixed-orientation T-matrix calculation.
 
+        Efficiencies are cross sections divided by ``pi * r**2``, with ``r``
+        the volume-equivalent radius of the external spheres for the totals
+        (:meth:`get_cross_section_radius`), each sphere's radius per sphere,
+        and ``sqrt(cell area / pi)`` (projected on the incident direction)
+        with a periodic lattice, where ``qabs_tot`` is the unit-cell
+        absorptance. Normalised per ``cross_section_convention``.
+
         Returns
         -------
         dict with keys:
@@ -282,14 +339,15 @@ class MstmBindings:
         )
 
         self._solved = True
+        f = self._efficiency_factor()
 
         return {
-            "q_ext": q_ext,
-            "q_abs": q_abs,
-            "q_sca": q_sca,
-            "qext_tot": qext_tot,
-            "qabs_tot": qabs_tot,
-            "qsca_tot": qsca_tot,
+            "q_ext": q_ext / f,
+            "q_abs": q_abs / f,
+            "q_sca": q_sca / f,
+            "qext_tot": qext_tot / f,
+            "qabs_tot": qabs_tot / f,
+            "qsca_tot": qsca_tot / f,
             "solution_error": sol_err,
             "iterations": niter,
             "status": status,
@@ -340,15 +398,17 @@ class MstmBindings:
         the same ``R = Rz(alpha_deg).Ry(beta_deg)`` before calling this
         method.
 
-        **Raw S11 convention.** The returned S11 follows the
-        Bohren-Huffman convention ``dCsca/dOmega = S11 / k**2`` (i.e.
-        ``integral(S11 dOmega) over 4*pi steradians == k**2 * Csca``),
-        NOT the radiative-transfer "phase function" convention
-        (``integral(S11 dOmega) == 4*pi``) that a caller asking for "the
-        phase function" would reasonably expect. Confirmed empirically by
-        direct numerical integration for a symmetric single sphere. See
-        :func:`pymstm._convert.s11_to_phase_function` to convert to the
-        4*pi-normalized phase function convention.
+        **Raw S11 convention.** The returned S11 is MSTM's own (it does not
+        depend on ``cross_section_convention``): ``integral(S11 dOmega)
+        over 4*pi steradians == Csca``, with ``Csca = qsca * pi * r**2`` in
+        MSTM's length units (in which the vacuum wavenumber is 1) and
+        ``qsca`` from ``cross_section_convention="mstm"``. In vacuum this
+        is the Bohren-Huffman convention ``dCsca/dOmega = S11 / k**2``; in
+        a medium of real index ``n``, multiply S11 by ``n`` to get the
+        Bohren-Huffman S11 for the wavenumber in the medium. It is NOT the
+        radiative-transfer "phase function" convention
+        (``integral(S11 dOmega) == 4*pi``); see
+        :func:`pymstm._convert.s11_to_phase_function`.
         """
         if not self._solved:
             raise RuntimeError("Not solved. Call solve() first.")
@@ -415,12 +475,13 @@ class MstmBindings:
                 )
             )
 
+        f = self._efficiency_factor()
         return {
             "tmatrix": tdata,
             "tmatrix_order": tord,
             "tmatrix_size": ntot,
-            "q_ext": q_ext,
-            "q_abs": q_abs,
+            "q_ext": q_ext / f,
+            "q_abs": q_abs / f,
             "status": status,
         }
 
@@ -559,7 +620,15 @@ class MstmBindings:
         self._ext.spheredata.gaussian_beam_constant = beam_constant
 
     def get_mie_efficiencies(self):
-        """Get per-sphere Mie efficiencies (computed during prepare).
+        """Get per-sphere isolated-sphere (Lorenz-Mie) efficiencies,
+        computed during prepare().
+
+        Under ``cross_section_convention="physical"`` these are the Mie
+        efficiencies of each sphere alone in a non-absorbing medium (for an
+        absorbing medium they are divided by ``Re(n)**2`` as well, but
+        extinction in an absorbing host has no unique definition). Spheres
+        inside another sphere are computed by MSTM relative to that host
+        sphere's material.
 
         Returns
         -------
@@ -567,8 +636,9 @@ class MstmBindings:
         q_abs : ndarray, shape (n,)
         """
         n = self._nspheres
-        q_ext = np.asarray(self._ext.spheredata.qext_mie[:n])
-        q_abs = np.asarray(self._ext.spheredata.qabs_mie[:n])
+        f2 = self._efficiency_factor() ** 2
+        q_ext = np.asarray(self._ext.spheredata.qext_mie[:n]) / f2
+        q_abs = np.asarray(self._ext.spheredata.qabs_mie[:n]) / f2
         return q_ext, q_abs
 
     def finalize(self):
