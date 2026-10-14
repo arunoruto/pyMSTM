@@ -36,11 +36,24 @@ Usage:
     print("Total Q_sca:", result['qsca_tot'])
 """
 
+import threading
 import warnings
 
 import numpy as np
 
 from . import _mstm_ext as _ext
+
+# All MSTM state lives in Fortran module variables, so the extension is not
+# reentrant: one set->prepare->solve sequence per process at a time. The
+# long Fortran calls release the GIL (``!f2py threadsafe``), so without this
+# lock two threads would interleave on that shared state. The high-level
+# entry points (MSTM.solve(), solve_task()) hold it for the whole sequence;
+# direct MstmBindings users sharing a process across threads must do the
+# same (``with MSTM_LOCK: ...``). Reentrant so those entry points can
+# construct/finalize MstmBindings inside it.
+# ponytail: one global lock = one solve per process; run more processes
+# (Dask workers with nthreads=1) for parallelism.
+MSTM_LOCK = threading.RLock()
 
 
 def get_tmatrix_size(tmatrix_order):
@@ -70,7 +83,8 @@ class MstmBindings:
         self._prepared = False
         self._solved = False
         self._ext = _ext
-        self._ext.mstm_f2py_bindings.mstm_init()
+        with MSTM_LOCK:  # never reset defaults under a running solve
+            self._ext.mstm_f2py_bindings.mstm_init()
 
     def set_spheres(self, radii, positions, orders, ref_re, ref_im):
         """Set sphere data for the cluster.
@@ -568,13 +582,21 @@ class MstmBindings:
     def finalize(self):
         """Free all allocated memory and finalize the library."""
         if self._ext is not None:
-            self._ext.mstm_f2py_bindings.mstm_finalize()
+            with MSTM_LOCK:  # never free arrays under a running solve
+                self._ext.mstm_f2py_bindings.mstm_finalize()
             self._ext = None
         self._prepared = False
         self._solved = False
 
     def __del__(self):
+        # GC can run this on any thread (e.g. a Dask worker's event loop):
+        # never block it behind someone else's solve -- if the lock is
+        # busy, skip; the next prepare() reallocates everything anyway.
+        if not MSTM_LOCK.acquire(blocking=False):
+            return
         try:
             self.finalize()
         except Exception:
             pass
+        finally:
+            MSTM_LOCK.release()

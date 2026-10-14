@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from ._cli import run_mstm
 from ._convert import s11_to_phase_function
+from ._mstm import MSTM_LOCK
 from ._mstm import MstmBindings as _MstmBindings
 
 
@@ -190,6 +191,10 @@ class MSTM(BaseModel):
         ]
 
     def _solve_bindings(self) -> MstmResult:
+        with MSTM_LOCK:  # whole sequence: MSTM state is process-global
+            return self._solve_bindings_locked()
+
+    def _solve_bindings_locked(self) -> MstmResult:
         t0 = time.perf_counter()
         m = _MstmBindings()
         try:

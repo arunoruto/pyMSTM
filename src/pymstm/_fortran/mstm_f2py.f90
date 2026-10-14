@@ -353,6 +353,13 @@ end subroutine mstm_clear_lattice
 !  mstm_set_spheres() and before mstm_solve().
 !
 subroutine mstm_prepare()
+    !f2py threadsafe
+    !  threadsafe = release the GIL for the call (here and on solve/
+    !  compute_tmatrix/ranorient_smatrix), so other Python threads -- e.g.
+    !  a Dask worker's heartbeat loop -- keep running during a long solve.
+    !  It does NOT make MSTM reentrant: all state is module-global, so
+    !  callers must serialise whole set->prepare->solve sequences (see
+    !  pymstm._mstm.MSTM_LOCK).
     implicit none
     integer :: i, n
 
@@ -512,6 +519,7 @@ end subroutine mstm_prepare
 !
 subroutine mstm_solve(q_ext, q_abs, q_sca, qext_tot, qabs_tot, &
         qsca_tot, sol_err, niter, status, n)
+    !f2py threadsafe
     implicit none
     ! n must be passed explicitly (the caller already knows it -- it's the
     ! same count passed to mstm_set_spheres). f2py's generated C glue
@@ -654,6 +662,7 @@ end subroutine mstm_scattering_angle
 !
 subroutine mstm_compute_tmatrix(tmatrix_data, tmat_order, q_ext, q_abs, &
         status, n, array_len)
+    !f2py threadsafe
     implicit none
     integer, intent(in) :: n, array_len
     real(8), intent(out) :: tmatrix_data(array_len)
@@ -763,6 +772,7 @@ end subroutine mstm_compute_tmatrix
 !
 subroutine mstm_ranorient_smatrix(tmatrix_file, sm_coef, cm_coef, &
         tmat_order_out, tmat_order)
+    !f2py threadsafe
     implicit none
     character(len=*), intent(in) :: tmatrix_file
     integer, intent(in) :: tmat_order
