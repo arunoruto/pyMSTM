@@ -1,35 +1,15 @@
-"""Smoke test for the in-progress ctypes -> f2py migration.
-
-Not a comparison test (see test_compatibility.py for that) -- this only
-proves the f2py extension (built via `make f2py-ext`, see
-src/pymstm/_fortran/mstm_f2py.f90 and the Makefile's f2py-ext target)
-still imports and behaves correctly as more subroutines get ported in
-Stage 2. Skipped entirely if the extension hasn't been built.
+"""Direct tests of the f2py extension's wrapper subroutines
+(src/pymstm/_fortran/mstm_f2py.f90), below MstmBindings. Not a comparison
+test (see test_compatibility.py for that).
 """
-
-import glob
-import os
 
 import numpy as np
 import pytest
 
-_PROJ_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-_EXT_GLOB = os.path.join(_PROJ_ROOT, "src", "pymstm", "_mstm_ext*.so")
-
-pytestmark = pytest.mark.skipif(
-    not glob.glob(_EXT_GLOB),
-    reason="f2py extension not built. Run 'make f2py-ext' first.",
-)
-
 
 def _import_ext():
-    import importlib
-    import sys
-
-    sys.path.insert(0, os.path.join(_PROJ_ROOT, "src"))
     import pymstm._mstm_ext as ext
 
-    importlib.reload(ext)  # avoid stale module-level state across tests
     return ext
 
 
@@ -273,7 +253,7 @@ def test_scattering_angle_and_scat_mat_access():
     ext.mstm_f2py_bindings.mstm_finalize()
 
 
-def test_compute_and_ranorient_smatrix():
+def test_compute_and_ranorient_smatrix(tmp_path, monkeypatch):
     """Also a regression test for two real bugs found in
     mstm_ranorient_smatrix_c (present pre-migration, not introduced by
     this port): a fixed-length character*30 dummy argument in
@@ -284,6 +264,7 @@ def test_compute_and_ranorient_smatrix():
     regardless of the file's real content, making every coefficient
     trivially zero.
     """
+    monkeypatch.chdir(tmp_path)  # short relative T-matrix file name
     ext = _import_ext()
     ext.mstm_f2py_bindings.mstm_init()
     _prepare_two_sphere(ext)
@@ -295,7 +276,9 @@ def test_compute_and_ranorient_smatrix():
     array_len = 2 * nentries
 
     tmatrix_data, tmat_order, q_ext, q_abs, status = (
-        ext.mstm_f2py_bindings.mstm_compute_tmatrix(n=2, array_len=array_len)
+        ext.mstm_f2py_bindings.mstm_compute_tmatrix(
+            "tmatrix_temp.dat", n=2, array_len=array_len
+        )
     )
     assert status == 0
     assert tmat_order > 0
