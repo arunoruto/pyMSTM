@@ -147,8 +147,8 @@ def test_run_mstm_keep_workdir(tmp_path):
 
 @pytest.mark.skipif(
     not _mstm_mpi_available(),
-    reason="mstm-mpi binary not found on PATH. Build it (`make mpi` or the Nix "
-    "flake's mstm-mpi package) and add it to PATH, or set PYMSTM_MSTM_MPI_BIN.",
+    reason="mstm-mpi binary not found on PATH. Build it (`nix build .#mstm-mpi`) "
+    "and add result/bin to PATH, or set PYMSTM_MSTM_MPI_BIN.",
 )
 def test_run_mstm_mpi():
     serial = run_mstm(inp_kwargs=_SPHERE_KWARGS)
