@@ -1,41 +1,129 @@
 # pyMSTM
 
-Python bindings for the [MSTM](https://github.com/dmckwski/MSTM) (Multiple Sphere T-Matrix) Fortran library.
+Python bindings for [MSTM](https://github.com/dmckwski/MSTM), the Multiple
+Sphere T-Matrix code by Daniel Mackowski: electromagnetic scattering by
+clusters of spheres, including spheres in layered media and in periodic
+lattices.
 
-Compute electromagnetic scattering from clusters of spheres, including layered media and periodic lattices.
+pyMSTM compiles MSTM's Fortran sources (the `december2023` version) into a
+Python extension with numpy.f2py. If you use it, please cite MSTM (see
+[Citing](#citing)).
+
+## Installation
+
+```bash
+pip install pymstm            # or: uv add pymstm
+pip install "pymstm[dask]"    # with run_dask() for distributed solves
+```
+
+Wheels are published for Linux x86_64 and CPython 3.11–3.14. On other
+platforms pip builds the source distribution, which needs a Fortran
+compiler (gfortran) and a C compiler.
 
 ## Quick start
 
+`MSTM` is a validated, self-contained problem description; `solve()` runs it
+through the bindings (or, with `cli=True`, through the MSTM command-line
+program) and returns an `MstmResult`:
+
 ```python
-import numpy as np
 from pymstm import MSTM
 
-# Single dielectric sphere: size parameter x = 5, n = 1.5
-m = MSTM()
-m.set_spheres(
-    radii=[5.0],
-    positions=[[0, 0, 0]],
-    orders=[12],
-    ref_re=[1.5],
-    ref_im=[0.0],
-)
-m.set_medium_ref(1.0, 0.0)
-m.set_incident(alpha_deg=0, beta_deg=0)
-m.prepare()
-result = m.solve()
+# One sphere, size parameter x = 2*pi*r/lambda = 5, refractive index 1.5
+result = MSTM(radii=[5.0], positions=[(0, 0, 0)], ref_re=[1.5], ref_im=[0.0]).solve()
+print(result.q_ext_total, result.q_abs_total, result.q_sca_total)
 
-print(f"Q_ext = {result['qext_tot']:.6f}")
-print(f"Q_abs = {result['qabs_tot']:.6f}")
-print(f"Q_sca = {result['qsca_tot']:.6f}")
+# The same sphere in water (absolute refractive indices)
+in_water = MSTM(
+    radii=[5.0], positions=[(0, 0, 0)], ref_re=[1.5], ref_im=[0.0],
+    medium_ref_re=1.33, compute_mueller=True, n_theta=181,
+).solve()
+in_water.mueller[0].s11   # phase function (integrates to 4*pi) at theta = 0
 ```
+
+`MstmBindings` is the low-level, stateful interface to everything MSTM
+offers (layers, periodic lattices, T-matrices, random orientation):
+
+```python
+from pymstm import MstmBindings
+
+m = MstmBindings()
+m.set_spheres(radii=[5.0, 5.0], positions=[[0, 0, -6], [0, 0, 6]],
+              orders=[12, 12], ref_re=[1.5, 1.5], ref_im=[0.01, 0.01])
+m.set_incident(alpha_deg=0, beta_deg=30)
+m.prepare()
+r = m.solve()               # dict: qext_tot, qabs_tot, qsca_tot, q_ext, q_abs, ...
+s = m.get_scattering_angle(costheta=0.5, phi=0.0)   # 16 Mueller elements
+m.finalize()
+```
+
+MSTM keeps its state in process-global Fortran variables, so only the most
+recently created `MstmBindings` can be used; an older instance raises
+`RuntimeError`.
+
+## Units and conventions
+
+**Lengths.** MSTM's length unit is `1/k0`, with `k0 = 2*pi/lambda` the
+vacuum wavenumber: radii and positions are size parameters (`x = k0 * r`).
+To give lengths in physical units instead (say nm), call
+`set_length_scale(k0)` (`k0` in nm⁻¹), or set `MstmTask.length_scale`; it
+multiplies radii, positions and lattice cell widths. `MstmBindings` applies
+the scale when `set_spheres` and `set_lattice` are called, so call
+`set_length_scale` first. `set_lattice(wx, wy)` takes the cell widths in
+the same units as the radii.
+
+**Medium and relative setups.** For spheres of index `m` in a medium of
+index `n`, either set the medium (`medium_ref_re`/`medium_ref_im`,
+`set_medium_ref`, `MstmTask.medium_ref_index`) and give absolute sphere
+indices, with lengths in units of `1/k0`; or use the relative setup: vacuum
+medium, sphere indices `m/n` and lengths scaled by `n` (`length_scale =
+2*pi*n/lambda`). For a non-absorbing medium both give the same efficiencies
+(with the default convention below). An absorbing medium needs the medium
+setup.
+
+**Efficiencies** are cross sections divided by `pi * r**2`: for the totals
+`r` is the volume-equivalent radius of the external spheres
+(`get_cross_section_radius()`), per sphere it is that sphere's radius. With
+a periodic lattice they are per unit-cell area (projected on the incident
+direction): `qabs_tot` is the unit-cell absorptance.
+
+**`cross_section_convention`** (`MSTM`, `MstmBindings(...)`, `MstmTask`):
+
+- `"physical"` (default): cross sections per incident irradiance in the
+  medium. A single sphere gives the Lorenz–Mie efficiencies in the host,
+  and `Q_ext` tends to 2 for large spheres.
+- `"mstm"`: MSTM's own numbers, as its command-line program prints them.
+  In a medium of index `n`, MSTM normalises by the vacuum irradiance of
+  the incident field amplitude, so its extinction, absorption and
+  scattering efficiencies (totals, per sphere, per lattice cell) are
+  `Re(n)` times the physical ones (`get_mie_efficiencies()`: `Re(n)**2`).
+  The unit-cell reflectance and absorptance printed by the CLI carry the
+  same factor, and its transmittance is computed as `1 - R - A`.
+
+`Re(n)` is that of the incident medium (layer 0 with plane boundaries), the
+quantity MSTM itself divides its scattering matrix by. In vacuum both
+conventions agree. pyMSTM 1.x returned the `"mstm"` numbers.
+
+**Scattering matrix.** `MstmBindings.get_scattering_angle(costheta, phi)`
+takes angles in the lab frame (the forward direction is
+`(theta, phi) = (beta, alpha)` of `set_incident`) and returns MSTM's raw
+matrix, flattened row by row. Its S11 integrates over the sphere to
+`C_sca = qsca * pi * r**2` (lengths in units of `1/k0`, `qsca` in the
+`"mstm"` convention); in vacuum this is the Bohren–Huffman convention
+`dC_sca/dOmega = S11 / k**2`. `MstmResult.mueller` and
+`s11_to_phase_function` give the phase function, normalised to `4*pi`,
+which does not depend on the convention.
 
 ## Features
 
-- **Fixed-orientation scattering**: per-sphere and total extinction, absorption, scattering efficiencies; 4x4 Mueller matrix at arbitrary angles
-- **T-matrix computation**: full T-matrix output for use with orientation averaging
-- **Random orientation scattering**: GSF expansion coefficients and angle-dependent Mueller matrix
-- **Layered media**: plane boundaries with arbitrary refractive index profiles
-- **Periodic lattices**: 2D periodic arrays with lattice sums
+- Fixed orientation: total and per-sphere extinction, absorption and
+  scattering efficiencies; the 4x4 Mueller matrix at any angle.
+- T-matrix of a cluster (`compute_tmatrix`), and random-orientation
+  scattering matrices from it (`ranorient_smatrix`).
+- Plane boundaries (layered media) and 2D periodic lattices.
+- `solve_task`/`run_dask` for many independent solves on a Dask cluster.
+- The MSTM command-line program as an alternative backend (`cli=True`,
+  `run_mstm`), for cross-checks and MPI runs.
 
 ## Parallel solves (threads, Dask)
 
@@ -50,10 +138,10 @@ import math
 from dataclasses import replace
 from pymstm import MstmTask, solve_task, run_dask
 
-n_host, n_fe = 1.8476, 2.868 + 4.192j
+n_host = 1.5
 base = MstmTask(
     radii=[5.0, 5.0], positions=[[-6, 0, 0], [6, 0, 0]],  # nm
-    ref_index=n_fe / n_host, cell=(80.0, 80.0),             # None = isolated
+    ref_index=(2.9 + 4.2j) / n_host, cell=(80.0, 80.0),   # relative setup; cell=None: isolated
     solution_eps=1e-8,
 )
 tasks = [replace(base, length_scale=2 * math.pi * n_host / wl) for wl in (500.0, 700.0, 1000.0)]
@@ -64,10 +152,11 @@ results[0]["qabs_tot"]            # unit-cell absorptance A (lattice); per-spher
 ```
 
 Each result is a small dict: `qext_tot`/`qabs_tot`/`qsca_tot`, per-sphere
-`q_ext`/`q_abs`/`q_sca`, `mie_orders`, `t_matrix_order`, `iterations`,
-`status` (0 = converged), `solution_error`, `wall_time_s`. `run_dask` takes
-`client=` (left open), `scheduler_address=`, or neither (temporary
-`LocalCluster`), and `progress_callback(fraction, index)`.
+`q_ext`/`q_abs`/`q_sca`, `mie_orders`, `t_matrix_order`,
+`cross_section_radius`, `iterations`, `status` (0 = converged),
+`solution_error`, `wall_time_s`. `run_dask` takes `client=` (left open),
+`scheduler_address=`, or neither (temporary `LocalCluster`), and
+`progress_callback(fraction, index)`.
 
 `isolate=True` (on `solve_task` and `run_dask`) runs each solve in a fresh
 child interpreter in its own temp directory: a Fortran crash becomes a
@@ -77,56 +166,71 @@ is off by default; turn it on for long production runs.
 
 ### Running on a remote Dask cluster
 
-1. **Build a portable wheel for the workers' Python** (the extension links
-   libgfortran; a local `uv build` on NixOS links the Nix store copy and is not
-   portable). Either run the *Wheels* GitHub workflow (`workflow_dispatch`),
-   or locally with a container engine:
-   `CIBW_CONTAINER_ENGINE=podman uvx cibuildwheel --only cp314-manylinux_x86_64 --output-dir wheelhouse`.
-   cibuildwheel builds in manylinux_2_28 and `auditwheel repair` bundles
-   libgfortran/libquadmath into the wheel. Check with
-   `auditwheel show wheelhouse/pymstm-*.whl`.
-2. **Install it on the workers.** Workers need `numpy` and `pydantic`
-   already (plus `distributed`). Options:
-   - prebuilt environment/image containing the wheel (best);
-   - `client.register_plugin(distributed.diagnostics.plugin.PipInstall(["pymstm @ https://.../pymstm-...whl"]))`
-     if workers can reach the URL (re-runs on every worker restart);
-   - ship the bytes from the client and install once per host, then purge
-     `pymstm` from `sys.modules` (the pattern of space-weathering's
-     `scripts/dask_fit_runner.py:provision`).
-3. **Worker settings:** `dask worker tcp://scheduler:8786 --nworkers <cores> --nthreads 1`.
+1. **Install pyMSTM on the workers**, with `distributed`
+   (`pip install "pymstm[dask]"`), ideally in the image or environment the
+   workers start from. For an unreleased version, build a portable wheel
+   with the *Wheels* workflow, or locally with
+   `uvx cibuildwheel --only cp314-manylinux_x86_64` (it bundles libgfortran;
+   a wheel built with `uv build` on NixOS links the Nix store copy and is
+   not portable), and install that.
+2. **Worker settings:** `dask worker tcp://scheduler:8786 --nworkers <cores> --nthreads 1`.
    Extra threads per worker only queue on `MSTM_LOCK`. No `worker-ttl` change
    is needed: the GIL is released during solves, so heartbeats continue.
    Give each worker enough `--memory-limit` for its largest geometry.
-4. Run `run_dask(tasks, client=client, isolate=True)`; results come back
+3. Run `run_dask(tasks, client=client, isolate=True)`; results come back
    in task order.
 
-## Installation
+## The MSTM command-line program (optional)
+
+`MSTM(..., cli=True)`, `run_mstm()` and the cross-check tests run MSTM's own
+program. pyMSTM looks for `mstm` (or `mstm-mpi` with `mpi_processes=`) on
+`PATH`, or takes `binary_path=` or the `PYMSTM_MSTM_BIN` /
+`PYMSTM_MSTM_MPI_BIN` environment variables. It must be built from the same
+`december2023` sources:
 
 ```bash
-# Clone with submodules
+nix build github:arunoruto/pyMSTM#mstm        # or #mstm-mpi
+# or, in a checkout with the submodule:
+make cli                                      # -> build/mstm
+```
+
+Programs built from the older `code/mstm-v4.0` tree of the MSTM repository
+normalise S11 differently and write no results for a non-vacuum medium;
+pyMSTM does not support them.
+
+## Development
+
+```bash
 git clone --recurse-submodules https://github.com/arunoruto/pyMSTM.git
 cd pyMSTM
-
-# Build the Fortran library (requires gfortran)
-make
-
-# Install in development mode
-pip install -e .
+uv sync --extra dev --extra dask   # builds the extension (needs gfortran)
+make cli                           # optional: the CLI for the cross-checks
+PYMSTM_MSTM_BIN=build/mstm uv run pytest
 ```
 
-## Requirements
+The editable install rebuilds the extension on import when a source file
+changed (`meson` and `ninja` from the virtual environment must be on
+`PATH`).
 
-- Python >= 3.11
-- NumPy >= 1.25
-- gfortran (GCC)
+## Citing
 
-## Running tests
+pyMSTM is a wrapper; the method and the Fortran code are MSTM's. Please
+cite
 
-```bash
-pip install -e ".[dev]"
-pytest tests/
-```
+- D. W. Mackowski and M. I. Mishchenko, "A multiple sphere T-matrix
+  Fortran code for use on parallel computer clusters", J. Quant.
+  Spectrosc. Radiat. Transfer 112, 2182–2192 (2011),
+  [doi:10.1016/j.jqsrt.2011.02.019](https://doi.org/10.1016/j.jqsrt.2011.02.019),
+- for plane boundaries and periodic lattices (MSTM version 4): D. W.
+  Mackowski, "The extension of the Multiple Sphere T Matrix code to include
+  multiple plane boundaries and 2-D periodic systems", J. Quant. Spectrosc.
+  Radiat. Transfer 290, 108292 (2022),
+  [doi:10.1016/j.jqsrt.2022.108292](https://doi.org/10.1016/j.jqsrt.2022.108292),
+
+and pyMSTM itself if it helped (see `CITATION.cff`).
 
 ## License
 
-MIT. The bundled MSTM Fortran code retains its original license -- see `external/mstm/` for details.
+pyMSTM is MIT-licensed (`LICENSE`). MSTM is MIT-licensed by Daniel
+Mackowski; its third-party routines and the GNU Fortran runtime libraries
+bundled in the Linux wheels are listed in `LICENSES/`.
