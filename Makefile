@@ -25,7 +25,7 @@ MODULE_OBJS = $(patsubst %.f90,$(BUILD_DIR)/%.o,$(notdir $(MODULE_SRCS)))
 
 # --- f2py extension (the Python-facing pyMSTM backend) ---
 #
-# The actual build recipe (which sources, the two patches needed to work
+# The actual build recipe (which sources, the patches needed to work
 # around real numpy.f2py parser bugs, the `only:` function list) lives in
 # meson.build -- this target is a thin wrapper so `make f2py-ext` still
 # works as a quick one-off, without needing a full `pip install -e .`.

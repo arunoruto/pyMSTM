@@ -17,15 +17,21 @@ mstm_dir = meson.project_source_root() / 'external' / 'mstm' / 'december2023'
 wrapper_dir = meson.project_source_root() / 'src' / 'pymstm' / '_fortran'
 patches_dir = wrapper_dir / 'patches'
 
-# --- Patched copies of two legacy source files ---
+# --- Patched legacy sources ---
 #
-# numpy.f2py's Fortran parser (crackfortran) has real bugs that crash on
-# certain DATA statements, and it refuses to expose any module-level
-# variable of a module that itself defines a derived type. Both patches
-# are pure Fortran refactors (see the .patch files for exactly what and
-# why) -- no algorithm or runtime behavior changes -- applied only to
-# scratch copies used for this extension. The standalone MSTM CLI binary
-# keeps building from the literal unmodified upstream sources.
+# numpy.f2py's Fortran parser (crackfortran) crashes on certain DATA
+# statements in mstm-modules-33.f90; the patch is a pure Fortran refactor
+# (see the .patch file), applied to a scratch copy used only for this
+# extension.
+#
+# random_configuration-10.f90 is not patched at build time but vendored as
+# a complete modified copy in src/pymstm/_fortran/ (f2py derived-type
+# relocation, and the upstream GPL-derived hpsort_eps_epw replaced by an
+# independent heapsort -- see the file header). It is compiled because
+# mstm-input-37.f90 `use`s random_sphere_configuration.
+#
+# The standalone MSTM CLI (Makefile, flake.nix) builds from the unmodified
+# upstream sources.
 mstm_modules_patched = custom_target(
   'mstm-modules-33-patched',
   input: [
@@ -33,34 +39,6 @@ mstm_modules_patched = custom_target(
     patches_dir / 'mstm-modules-33-f2py-data-fix.patch',
   ],
   output: 'mstm-modules-33.f90',
-  command: [py, files('tools' / 'apply_patch.py'), '@INPUT0@', '@INPUT1@', '@OUTPUT@'],
-)
-
-random_config_patched = custom_target(
-  'random-configuration-10-patched',
-  input: [
-    mstm_dir / 'random_configuration-10.f90',
-    patches_dir / 'random_configuration-10-f2py-derivedtype-fix.patch',
-  ],
-  output: 'random_configuration-10.f90',
-  command: [py, files('tools' / 'apply_patch.py'), '@INPUT0@', '@INPUT1@', '@OUTPUT@'],
-)
-
-# A second, independent patch on top of the one above: replaces
-# hpsort_eps_epw, which upstream MSTM adapted from a GPLv2-licensed
-# Quantum ESPRESSO/EPW routine, with a clean-room heapsort implementation
-# (same signature/contract, written from scratch -- see the patch file).
-# Needed to keep the whole compiled extension MIT-clean, since
-# mstm-input-37.f90 has a compile-time `use random_sphere_configuration`
-# dependency on this file even when the random-configuration feature
-# itself isn't exposed to Python.
-random_config_relicensed = custom_target(
-  'random-configuration-10-relicensed',
-  input: [
-    random_config_patched,
-    patches_dir / 'random_configuration-10-license-fix.patch',
-  ],
-  output: 'random_configuration-10-relicensed.f90',
   command: [py, files('tools' / 'apply_patch.py'), '@INPUT0@', '@INPUT1@', '@OUTPUT@'],
 )
 
@@ -96,7 +74,7 @@ f2py_sources = [
   mstm_dir / 'fft_translation-5.f90',
   mstm_dir / 'mstm-scatprops-26.f90',
   mstm_dir / 'mstm-solver-8.f90',
-  random_config_relicensed,
+  wrapper_dir / 'random_configuration-10.f90',
   mstm_dir / 'lmfit.f90',
   mstm_dir / 'mstm-input-37.f90',
   wrapper_dir / 'mstm_f2py.f90',
