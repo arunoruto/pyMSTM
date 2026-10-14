@@ -31,6 +31,9 @@ def parse_mstm_output(filepath: str | os.PathLike[str]) -> dict[str, Any]:
     total : dict
         Total efficiencies with keys ``q_ext_unpol, q_abs_unpol, q_sca_unpol,
         q_ext_par, q_abs_par, q_sca_par, q_ext_perp, q_abs_perp, q_sca_perp``.
+        Under ``incidence_average=true`` MSTM only reports the unpolarized
+        triple, so only ``q_ext_unpol, q_abs_unpol, q_sca_unpol`` are
+        present in that case.
     scattering_matrix : dict or None
         ``{angles_deg, matrix}`` where *angles_deg* is a list of scattering
         angles in degrees and *matrix* is a nested list of shape
@@ -136,28 +139,45 @@ def _parse_per_sphere(text: str) -> list[dict[str, float]]:
 
 
 def _parse_total_efficiencies(text: str) -> dict[str, float]:
-    """Extract the 9-value total efficiencies line."""
-    pat = re.compile(
-        r"total\s+extinction,\s+absorption,\s+scattering\s+efficiencies.*\n"
-        rf"\s*((?:{_FLOAT_RE}\s+){{8}}{_FLOAT_RE})"
-    )
-    m = pat.search(text)
-    if not m:
-        return {}
+    """Extract the total efficiencies line.
 
-    vals = [float(v.replace("D", "E").replace("d", "E")) for v in m.group(1).split()]
-    keys = [
-        "q_ext_unpol",
-        "q_abs_unpol",
-        "q_sca_unpol",
-        "q_ext_par",
-        "q_abs_par",
-        "q_sca_par",
-        "q_ext_perp",
-        "q_abs_perp",
-        "q_sca_perp",
-    ]
-    return dict(zip(keys, vals))
+    Two output shapes exist, sharing the same header prefix but
+    differing in the trailing parenthetical and value count:
+
+    - Plain/random-orientation runs: ``"...efficiencies (unpol, par,
+      perp incidence)"`` followed by 9 values (unpolarized, parallel,
+      perpendicular incidence, in that order).
+    - ``incidence_average=true`` runs: ``"...efficiencies (unpolarized
+      incidence)"`` followed by only 3 values -- MSTM's own internal
+      average over incident directions has no parallel/perpendicular
+      decomposition to report, only the unpolarized result. Only the
+      ``q_*_unpol`` keys are populated in this case; ``q_*_par``/
+      ``q_*_perp`` are omitted rather than guessed at.
+    """
+    header = r"total\s+extinction,\s+absorption,\s+scattering\s+efficiencies.*\n"
+    unpol_keys = ["q_ext_unpol", "q_abs_unpol", "q_sca_unpol"]
+
+    pat9 = re.compile(header + rf"\s*((?:{_FLOAT_RE}\s+){{8}}{_FLOAT_RE})")
+    m = pat9.search(text)
+    if m:
+        vals = [float(v.replace("D", "E").replace("d", "E")) for v in m.group(1).split()]
+        keys = unpol_keys + [
+            "q_ext_par",
+            "q_abs_par",
+            "q_sca_par",
+            "q_ext_perp",
+            "q_abs_perp",
+            "q_sca_perp",
+        ]
+        return dict(zip(keys, vals))
+
+    pat3 = re.compile(header + rf"\s*((?:{_FLOAT_RE}\s+){{2}}{_FLOAT_RE})")
+    m = pat3.search(text)
+    if m:
+        vals = [float(v.replace("D", "E").replace("d", "E")) for v in m.group(1).split()]
+        return dict(zip(unpol_keys, vals))
+
+    return {}
 
 
 def _parse_tmatrix_order(text: str) -> int | None:

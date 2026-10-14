@@ -1,0 +1,51 @@
+cff-version: 1.2.0
+message: >-
+  If you use pyMSTM, please cite MSTM (the preferred citation below), and
+  pyMSTM itself if it helped.
+title: "pyMSTM: Python bindings for the Multiple Sphere T-Matrix code (MSTM)"
+type: software
+authors:
+  - family-names: Arnaut
+    given-names: Mirza
+    email: mirza.arnaut@tu-dortmund.de
+repository-code: "https://github.com/arunoruto/pyMSTM"
+license: MIT
+keywords:
+  - T-matrix
+  - multiple scattering
+  - light scattering
+  - electromagnetic scattering
+  - Fortran
+preferred-citation:
+  type: article
+  authors:
+    - family-names: Mackowski
+      given-names: Daniel W.
+    - family-names: Mishchenko
+      given-names: Michael I.
+  title: "A multiple sphere T-matrix Fortran code for use on parallel computer clusters"
+  journal: "Journal of Quantitative Spectroscopy and Radiative Transfer"
+  volume: 112
+  issue: 13
+  start: 2182
+  end: 2192
+  year: 2011
+  doi: 10.1016/j.jqsrt.2011.02.019
+references:
+  - type: article
+    authors:
+      - family-names: Mackowski
+        given-names: Daniel W.
+    title: "The extension of the Multiple Sphere T Matrix code to include multiple plane boundaries and 2-D periodic systems"
+    journal: "Journal of Quantitative Spectroscopy and Radiative Transfer"
+    volume: 290
+    start: 108292
+    year: 2022
+    doi: 10.1016/j.jqsrt.2022.108292
+  - type: software
+    authors:
+      - family-names: Mackowski
+        given-names: Daniel W.
+    title: "MSTM: Multiple Sphere T-Matrix code"
+    repository-code: "https://github.com/dmckwski/MSTM"
+    license: MIT

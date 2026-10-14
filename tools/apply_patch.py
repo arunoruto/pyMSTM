@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Copy a source file and apply a patch to the copy.
 
-Used by meson.build to produce the two patched legacy-source copies
-needed to work around real numpy.f2py parser bugs (see
+Used by meson.build to produce the patched legacy-source copy
+needed to work around a numpy.f2py parser bug (see
 src/pymstm/_fortran/patches/*.patch for what and why) without touching
 the upstream vendored sources the CLI binary also builds from.
 

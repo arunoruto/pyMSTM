@@ -1,31 +1,15 @@
 name: Wheels
 
-# Single source of truth for *how* pyMSTM's wheels + sdist are built.
+# How pyMSTM's wheels (Linux x86_64, CPython 3.11-3.14, via cibuildwheel)
+# and sdist are built. Runs
+#   - on pull requests that touch the build (paths below),
+#   - on demand: workflow_dispatch, or a `/build-wheels` comment on a PR
+#     (from someone with write access),
+#   - from publish.yml (workflow_call) for the tag of a new release.
 #
-# Deliberately not triggered automatically at all (no PR push, no push to
-# main) -- cibuildwheel across cp311-cp314 is slow enough, and this
-# project small/quiet enough, that it isn't worth building on every
-# commit or every merge. Runs on demand instead:
-#   - workflow_dispatch: Actions tab, or `gh workflow run wheels.yml --ref
-#     <branch>` -- run manually whenever you actually want to validate a
-#     build (e.g. right before merging a PR you're unsure about).
-#   - Commenting `/build-wheels` on a PR.
-#   - Called by publish.yml (workflow_call) with the freshly-created tag
-#     at actual release time.
-#
-# Tradeoff worth knowing: publish.yml's `release` job tags before this
-# workflow ever builds anything (tag-first), so if a release's build
-# fails here, the tag/GitHub Release already exist -- a phantom release
-# with no wheels, needing manual cleanup (`gh release delete <tag>
-# --cleanup-tag`). Dropping the old push-to-main validation removed the
-# "main is continuously proven buildable" backstop that made that
-# unlikely; the mitigation now is manual -- run workflow_dispatch or
-# `/build-wheels` on a PR you're unsure about before merging/releasing.
-#
-# All cibuildwheel configuration lives in pyproject.toml's
-# [tool.cibuildwheel] -- deliberately not here as CIBW_* env vars, so this
-# stays a bare `uses:` and the exact same build is reproducible locally
-# with the `cibuildwheel` CLI.
+# The cibuildwheel configuration lives in pyproject.toml's
+# [tool.cibuildwheel], so the same build runs locally with the
+# `cibuildwheel` CLI. Each wheel is checked by tools/wheel_smoke_test.py.
 
 on:
   workflow_call:
@@ -44,6 +28,14 @@ on:
         default: ""
   issue_comment:
     types: [created]
+  pull_request:
+    paths:
+      - "meson.build"
+      - "pyproject.toml"
+      - "src/pymstm/_fortran/**"
+      - "tools/**"
+      - "external/**"
+      - ".github/workflows/wheels.yml"
 
 permissions:
   contents: read
@@ -118,12 +110,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # A matrix of one for now -- kept a matrix so macOS/Windows are a
-        # one-line add later (their cibuildwheel settings are already
-        # staged in pyproject.toml's [tool.cibuildwheel.macos]).
+        # Linux x86_64 only (see [tool.cibuildwheel.linux]).
         os: [ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # check_comment's resolved SHA on a /build-wheels comment;
           # inputs.ref on workflow_call/workflow_dispatch (empty checks
@@ -133,7 +123,7 @@ jobs:
 
       - uses: pypa/cibuildwheel@v4.1.0
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cibw-wheels-${{ matrix.os }}
           path: ./wheelhouse/*.whl
@@ -147,7 +137,7 @@ jobs:
       (github.event_name != 'issue_comment' || needs.check_comment.outputs.authorized == 'true')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.check_comment.outputs.sha || inputs.ref }}
           submodules: recursive
@@ -161,7 +151,7 @@ jobs:
       - name: Build sdist
         run: pipx run build --sdist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cibw-sdist
           path: ./dist/*.tar.gz

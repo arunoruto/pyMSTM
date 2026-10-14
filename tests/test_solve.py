@@ -1,7 +1,6 @@
 """Tests for fixed-orientation scattering."""
 
 import numpy as np
-import pytest
 from pymstm import MstmBindings
 
 
@@ -16,7 +15,7 @@ def test_single_sphere_solve():
         ref_im=[0.0],
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.prepare()
 
@@ -52,7 +51,7 @@ def test_two_sphere_solve():
         ref_im=[0.0, 0.0],
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.prepare()
 
@@ -80,7 +79,7 @@ def test_scattering_matrix():
         ref_im=[0.0],
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.prepare()
     m.solve()
 
@@ -88,10 +87,5 @@ def test_scattering_matrix():
     assert sm.shape == (16,)
     assert not np.any(np.isnan(sm))
     assert sm[0] > 0  # S11 should be positive
-
-    with pytest.warns(RuntimeWarning, match="non-deterministic"):
-        ct, smat = m.get_scattering_matrix()
-    assert smat.shape[1] > 0
-    assert not np.any(np.isnan(smat))
 
     m.finalize()

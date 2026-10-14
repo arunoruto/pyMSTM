@@ -4,6 +4,11 @@ pyMSTM Compatibility Dashboard.
 Dual mode: quick setup with in-app controls, or upload a ``.toml``
 sweep config.  Cluster files from ``tests/data/`` are auto-discovered.
 Missing references prompt the user to upload the required file.
+
+A development tool, not part of the installed package. From a checkout:
+
+    uv run --with streamlit --with pandas --with plotly \
+        streamlit run scripts/streamlit_app.py
 """
 
 from __future__ import annotations
@@ -166,7 +171,6 @@ def _run_pymstm_sweep(
         m.set_incident(
             cfg.incident.azimuthal_angle_deg,
             cfg.incident.polar_angle_deg,
-            cfg.incident.direction,
         )
         m.set_solver_params(eps=sol.tolerance, max_iter=sol.max_iterations)
         m.set_mie_eps(sol.mie_epsilon)
@@ -204,10 +208,8 @@ def _run_pymstm_sweep(
 def _pymstm_smatrix(
     m: MstmBindings, target_angles: list[float] | None = None, alpha_deg: float = 0.0
 ) -> dict | None:
-    # Always loop get_scattering_angle() rather than calling
-    # get_scattering_matrix() (retired from this dashboard entirely -- see
-    # its docstring for the confirmed non-deterministic memory-safety
-    # bug). When no target_angles are given, fall back to the CLI's own
+    # Loop get_scattering_angle() over the target angles. When no
+    # target_angles are given, fall back to the CLI's own
     # default resolution (-180..180deg, 361 points at 1deg) so the two
     # code paths still produce comparably-shaped output.
     if target_angles is None:
@@ -328,7 +330,7 @@ def _single_run(inp_text: str, config: MstmInpConfig, positions: np.ndarray):
             ref_im=[s.ref_im for s in config.spheres],
         )
         m.set_medium_ref(config.medium_ref_re, config.medium_ref_im)
-        m.set_incident(config.alpha_deg, config.beta_deg, config.incident_direction)
+        m.set_incident(config.alpha_deg, config.beta_deg)
         m.set_solver_params(eps=config.solution_eps, max_iter=config.max_iterations)
         m.set_mie_eps(config.mie_eps)
         m.set_translation_eps(config.translation_eps)

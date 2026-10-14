@@ -19,7 +19,7 @@ import pymstm
 
 
 def main() -> None:
-    m = pymstm.MSTM()
+    m = pymstm.MstmBindings()
     m.set_spheres(
         radii=[1.0, 1.0],
         positions=[[-1.5, 0, 0], [1.5, 0, 0]],
@@ -37,6 +37,14 @@ def main() -> None:
 
     qext = result["qext_tot"]
     assert qext > 0, f"expected positive Q_ext, got {qext!r}"
+
+    # The high-level interface, in a medium (exercises the convention).
+    r = pymstm.MSTM(
+        radii=[1.0], positions=[(0.0, 0.0, 0.0)], ref_re=[1.5], ref_im=[0.0],
+        medium_ref_re=1.33,
+    ).solve()
+    assert r.q_ext_total > 0
+
     print(f"pyMSTM {pymstm.__version__} wheel smoke test OK (Q_ext = {qext:.6g})")
 
 

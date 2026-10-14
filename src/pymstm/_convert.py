@@ -1,21 +1,20 @@
 """
 Scattering-matrix normalization conventions.
 
-MSTM's raw S11 (from both ``MSTM.get_scattering_angle()`` and the CLI's
-un-normalized scattering-matrix table, i.e. ``normalize_s11=False`` in
-:func:`pymstm._inp.write_inp_file`) follows the Bohren-Huffman convention::
+MSTM's raw S11 (from both ``MstmBindings.get_scattering_angle()`` and the
+CLI's un-normalized scattering-matrix table, i.e. ``normalize_s11=False``
+in :func:`pymstm._inp.write_inp_file`) follows, in vacuum, the
+Bohren-Huffman convention::
 
     dCsca/dOmega = S11 / k**2       (i.e. integral(S11 dOmega) == k**2 * Csca)
 
-This is *not* the "phase function" convention used elsewhere in radiative
-transfer::
+(in a medium, see ``MstmBindings.get_scattering_angle``). This is *not* the
+"phase function" convention used elsewhere in radiative transfer::
 
     integral(p(theta, phi) dOmega) == 4*pi
 
 These helpers convert between the two, and undo a separate, unrelated
-residual factor left by the CLI's ``normalize_s11=False`` path. See
-:meth:`pymstm.MSTM.get_scattering_angle`'s docstring for the underlying
-empirical derivation of both conventions.
+residual factor left by the CLI's ``normalize_s11=False`` path.
 """
 
 from __future__ import annotations
@@ -34,8 +33,11 @@ def s11_to_phase_function(s11, k, c_sca):
         (or the CLI's scattering-matrix table with ``normalize_s11=False``,
         after applying :func:`cli_normalized_s11_to_raw` if needed).
     k : float
-        Wavenumber in the surrounding medium, ``2*pi*n_medium/wavelength``,
-        in units consistent with S11's own length scale.
+        Wavenumber and *c_sca* in matching units. For MSTM's raw S11: ``k =
+        1`` (MSTM's length unit is ``1 / k0``, vacuum) and ``c_sca = qsca *
+        pi * r**2`` with ``qsca`` from ``cross_section_convention="mstm"``
+        (in a medium these differ from the physical values by ``Re(n)``;
+        see ``MstmBindings.get_scattering_angle``).
     c_sca : float
         Scattering cross section (same length-scale convention as *k*).
 

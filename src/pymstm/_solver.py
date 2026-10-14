@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from ._cli import run_mstm
 from ._convert import s11_to_phase_function
+from ._mstm import MSTM_LOCK
 from ._mstm import MstmBindings as _MstmBindings
 
 
@@ -78,9 +79,10 @@ class MSTM(BaseModel):
     ``radii``/``positions`` are in MSTM's own native, dimensionless
     size-parameter units (the same convention ``MstmBindings.set_spheres()``
     and ``write_inp_file()`` already use -- e.g. ``x = 2*pi*r/lambda`` for
-    a single sphere), *not* physical length units. Scale physical
-    radii/positions by your wavenumber before constructing this, exactly
-    as the existing lower-level APIs already require.
+    a single sphere, with the *vacuum* wavelength), *not* physical length
+    units. ``ref_re``/``ref_im`` are absolute, also with a medium
+    (``medium_ref_re``/``medium_ref_im``); efficiencies follow
+    ``cross_section_convention``.
 
     Set ``cli=True``/``False`` to solve via the standalone CLI binary or
     the f2py bindings respectively -- everything else about the call
@@ -107,10 +109,15 @@ class MSTM(BaseModel):
 
     medium_ref_re: float = 1.0
     medium_ref_im: float = 0.0
+    cross_section_convention: Literal["physical", "mstm"] = "physical"
+    """How efficiencies are normalised when the medium is not vacuum:
+    ``"physical"`` per incident irradiance in the medium (a single sphere
+    gives the Lorenz-Mie efficiencies in the host), ``"mstm"`` MSTM's own
+    numbers, which are ``Re(medium index)`` times larger. Both backends
+    apply it identically. See :class:`pymstm.MstmBindings`."""
 
     incident_alpha_deg: float = 0.0
     incident_beta_deg: float = 0.0
-    incident_direction: int = 1
 
     solution_eps: float = 1e-6
     max_iterations: int = 5000
@@ -163,12 +170,10 @@ class MSTM(BaseModel):
         if self.compute_mueller and self.cli and self.incident_beta_deg != 0.0:
             # mstm-cli's own scattering-matrix text table is structurally a
             # single fixed lab-frame meridian plane (no per-angle query to
-            # rotate the way the bindings' get_scattering_angle() allows --
-            # see pymstm._cli's docs and t-bench's mstm_cli.py adapter for
-            # the same, independently-confirmed limitation), so it can only
-            # correctly report the Mueller matrix for zero-polar-angle
-            # incidence. Reject rather than silently return an angularly
-            # wrong result.
+            # rotate the way the bindings' get_scattering_angle() allows),
+            # so it can only correctly report the Mueller matrix for
+            # zero-polar-angle incidence. Reject rather than silently return
+            # an angularly wrong result.
             raise ValueError(
                 "compute_mueller=True with cli=True requires "
                 "incident_beta_deg=0.0 -- mstm-cli's scattering-matrix "
@@ -190,8 +195,12 @@ class MSTM(BaseModel):
         ]
 
     def _solve_bindings(self) -> MstmResult:
+        with MSTM_LOCK:  # whole sequence: MSTM state is process-global
+            return self._solve_bindings_locked()
+
+    def _solve_bindings_locked(self) -> MstmResult:
         t0 = time.perf_counter()
-        m = _MstmBindings()
+        m = _MstmBindings(cross_section_convention=self.cross_section_convention)
         try:
             m.set_spheres(
                 radii=self.radii,
@@ -204,7 +213,6 @@ class MSTM(BaseModel):
             m.set_incident(
                 alpha_deg=self.incident_alpha_deg,
                 beta_deg=self.incident_beta_deg,
-                direction=self.incident_direction,
             )
             m.set_solver_params(eps=self.solution_eps, max_iter=self.max_iterations)
             m.set_mie_eps(self.mie_eps)
@@ -221,8 +229,11 @@ class MSTM(BaseModel):
 
             mueller = None
             if self.compute_mueller:
+                # The raw S11 integrates to MSTM's own Csca, whatever the
+                # convention (see get_scattering_angle).
                 r_cs = m.get_cross_section_radius()
-                c_sca = float(raw["qsca_tot"]) * math.pi * r_cs**2
+                q_sca_mstm = float(raw["qsca_tot"]) * m._efficiency_factor()
+                c_sca = q_sca_mstm * math.pi * r_cs**2
                 mueller = self._mueller_from_bindings(m, c_sca)
 
             wall_time = time.perf_counter() - t0
@@ -247,10 +258,9 @@ class MSTM(BaseModel):
         # coordinates, not relative to the incident direction (see its
         # docstring) -- rotate each desired (theta_rel, phi_rel=0) point
         # into the lab frame via the same R = Rz(alpha).Ry(beta) that
-        # defines MSTM's own incident-wave convention before calling it.
-        # Verified this exact approach against FaSTMM2 to 3-4 significant
-        # figures for a tilted-incidence case in a separate project
-        # (t-bench) built on this same package.
+        # defines MSTM's own incident-wave convention before calling it
+        # (checked against FaSTMM2 to 3-4 significant figures for a
+        # tilted-incidence case).
         alpha_rad = math.radians(self.incident_alpha_deg)
         beta_rad = math.radians(self.incident_beta_deg)
         cos_a, sin_a = math.cos(alpha_rad), math.sin(alpha_rad)
@@ -292,7 +302,6 @@ class MSTM(BaseModel):
             medium_ref_im=self.medium_ref_im,
             alpha_deg=self.incident_alpha_deg,
             beta_deg=self.incident_beta_deg,
-            incident_direction=self.incident_direction,
             solution_eps=self.solution_eps,
             max_iterations=self.max_iterations,
             mie_eps=self.mie_eps,
@@ -310,9 +319,14 @@ class MSTM(BaseModel):
         )
         parsed = result.parsed
         total = parsed["total"]
+        # Same conversion as MstmBindings: MSTM's efficiencies carry Re(n)
+        # of the medium (layer 0, which is the medium here).
+        f = self.medium_ref_re if self.cross_section_convention == "physical" else 1.0
 
         per_sphere = [
-            MstmPerSphereResult(q_ext=float(s["q_ext"]), q_abs=float(s["q_abs"]))
+            MstmPerSphereResult(
+                q_ext=float(s["q_ext"]) / f, q_abs=float(s["q_abs"]) / f
+            )
             for s in parsed["per_sphere"]
         ]
 
@@ -328,8 +342,8 @@ class MSTM(BaseModel):
             # (k=1.0 for the same "already in native MSTM units" reason).
             #
             # mstm-cli's own text table is always a fixed -180..180deg,
-            # 1deg-resolution grid (confirmed elsewhere this session to be
-            # unaffected by any .inp keyword) -- NOT self.n_theta points.
+            # 1deg-resolution grid (unaffected by any .inp keyword) -- NOT
+            # self.n_theta points.
             # Resample onto the exact same uniform n_theta grid the
             # bindings backend uses (nearest available integer-degree
             # angle) so the two backends' mueller lists are directly,
@@ -353,9 +367,9 @@ class MSTM(BaseModel):
         wall_time = time.perf_counter() - t0
         return MstmResult(
             backend="cli",
-            q_ext_total=float(total["q_ext_unpol"]),
-            q_abs_total=float(total["q_abs_unpol"]),
-            q_sca_total=float(total["q_sca_unpol"]),
+            q_ext_total=float(total["q_ext_unpol"]) / f,
+            q_abs_total=float(total["q_abs_unpol"]) / f,
+            q_sca_total=float(total["q_sca_unpol"]) / f,
             iterations=int(parsed["iterations"]),
             solution_error=float(parsed["solution_error"]),
             wall_time_seconds=wall_time,

@@ -36,11 +36,26 @@ Usage:
     print("Total Q_sca:", result['qsca_tot'])
 """
 
-import warnings
+import os
+import shutil
+import tempfile
+import threading
 
 import numpy as np
 
 from . import _mstm_ext as _ext
+
+# All MSTM state lives in Fortran module variables, so the extension is not
+# reentrant: one set->prepare->solve sequence per process at a time. The
+# long Fortran calls release the GIL (``!f2py threadsafe``), so without this
+# lock two threads would interleave on that shared state. The high-level
+# entry points (MSTM.solve(), solve_task()) hold it for the whole sequence;
+# direct MstmBindings users sharing a process across threads must do the
+# same (``with MSTM_LOCK: ...``). Reentrant so those entry points can
+# construct/finalize MstmBindings inside it.
+# ponytail: one global lock = one solve per process; run more processes
+# (Dask workers with nthreads=1) for parallelism.
+MSTM_LOCK = threading.RLock()
 
 
 def get_tmatrix_size(tmatrix_order):
@@ -60,17 +75,73 @@ class MstmBindings:
     prepare()/solve()/finalize()) giving access to every individual MSTM
     capability. For a higher-level, pydantic-validated interface that
     also supports the standalone CLI binary as an alternate backend, see
-    :class:`pymstm.MSTM`."""
+    :class:`pymstm.MSTM`.
 
-    def __init__(self, library_path=None):  # type: (str | None) -> None
-        # library_path is accepted for backward-compatible call signatures
-        # but is unused -- the f2py extension is a single compiled module,
-        # not a runtime-loadable shared library path.
+    Only one instance can be used at a time (the most recently created
+    one): MSTM's state is process-global. Threads sharing a process must
+    hold :data:`MSTM_LOCK` around a whole set->prepare->solve sequence.
+
+    Parameters
+    ----------
+    cross_section_convention : {"physical", "mstm"}
+        Normalisation of the efficiencies returned by :meth:`solve`,
+        :meth:`compute_tmatrix` and :meth:`get_mie_efficiencies`. They
+        differ only when the medium is not vacuum.
+
+        - ``"physical"`` (default): cross sections per incident irradiance
+          in the medium, e.g. a single sphere gives the Lorenz-Mie
+          efficiencies in the host (``Q_ext -> 2`` for large spheres).
+        - ``"mstm"``: MSTM's own numbers, as the MSTM CLI prints them.
+          With a medium refractive index ``n`` (``set_medium_ref``, or
+          layer 0 of ``set_layers``) MSTM normalises by the irradiance of
+          the same field amplitude in vacuum, so its extinction,
+          absorption and scattering efficiencies (totals and per sphere,
+          and with a lattice the unit-cell values) are ``Re(n)`` times the
+          physical ones; :meth:`get_mie_efficiencies` are ``Re(n)**2``
+          times. ``"physical"`` divides by these factors, using ``Re(n)``
+          of layer 0 as MSTM itself does when it normalises the
+          scattering matrix.
+
+        The scattering matrix (:meth:`get_scattering_angle`) is MSTM's
+        either way; see its Notes.
+    """
+
+    # MSTM keeps all state in process-global Fortran module variables, so
+    # only one instance can own it: the most recently created one. Older
+    # instances raise instead of silently using (or freeing) its arrays.
+    _owner = None
+
+    def __init__(self, cross_section_convention="physical"):
+        if cross_section_convention not in ("physical", "mstm"):
+            raise ValueError(
+                "cross_section_convention must be 'physical' or 'mstm', "
+                f"got {cross_section_convention!r}"
+            )
+        self.cross_section_convention = cross_section_convention
         self._nspheres = 0
         self._prepared = False
         self._solved = False
-        self._ext = _ext
-        self._ext.mstm_f2py_bindings.mstm_init()
+        self._token = object()
+        with MSTM_LOCK:  # never reset defaults under a running solve
+            MstmBindings._owner = self._token
+            _ext.mstm_f2py_bindings.mstm_init()
+
+    @property
+    def _ext(self):
+        if MstmBindings._owner is not self._token:
+            raise RuntimeError(
+                "this MstmBindings instance was finalized or superseded by a "
+                "newer one: MSTM's state is process-global, so only the most "
+                "recently created MstmBindings can be used"
+            )
+        return _ext
+
+    def _efficiency_factor(self):
+        """What MSTM's efficiencies are divided by under the selected
+        convention: Re(n) of the incident medium (layer 0), or 1."""
+        if self.cross_section_convention == "mstm":
+            return 1.0
+        return float(self._ext.surface_subroutines.layer_ref_index[0].real)
 
     def set_spheres(self, radii, positions, orders, ref_re, ref_im):
         """Set sphere data for the cluster.
@@ -121,10 +192,18 @@ class MstmBindings:
         self._solved = False
 
     def set_medium_ref(self, ref_re, ref_im=0.0):
-        """Set the surrounding medium refractive index (default: vacuum, 1+0i)."""
+        """Set the surrounding medium refractive index (default: vacuum, 1+0i).
+
+        Sphere refractive indices stay absolute, and lengths stay in units
+        of ``1 / k0`` (vacuum wavenumber) after ``set_length_scale``. The
+        equivalent "relative" setup is a vacuum medium with sphere indices
+        ``m / n`` and lengths scaled by ``n``; for a non-absorbing medium
+        it gives the same efficiencies as this one under
+        ``cross_section_convention="physical"``.
+        """
         self._ext.mstm_f2py_bindings.mstm_set_medium_ref(ref_re, ref_im)
 
-    def set_incident(self, alpha_deg=0.0, beta_deg=0.0, direction=1):
+    def set_incident(self, alpha_deg=0.0, beta_deg=0.0):
         """Set the incident plane wave direction.
 
         Parameters
@@ -133,14 +212,10 @@ class MstmBindings:
             Azimuthal angle in degrees (rotation about y-axis before beta).
         beta_deg : float
             Polar angle in degrees (0 = forward along +z, 90 = perpendicular).
-        direction : int
-            Accepted for backward-compatible call signatures but ignored.
-            The actual propagation direction is derived from beta_deg via
-            Snell's law once the medium/layer refractive indices are known
-            (in prepare()), matching the MSTM CLI's own logic. The old
-            ctypes-era wrapper took this as a caller-supplied value and
-            never re-derived it -- a latent bug (see mstm_set_incident's
-            docstring in mstm_f2py.f90) fixed during the f2py migration.
+            Above 90 the wave comes from the far side (+z towards -z), as in
+            the MSTM CLI, which derives its ``incident_direction`` from
+            ``incident_beta_deg`` the same way (in ``prepare()``, once the
+            medium and layer refractive indices are known).
         """
         self._ext.mstm_f2py_bindings.mstm_set_incident(alpha_deg, beta_deg)
 
@@ -227,6 +302,13 @@ class MstmBindings:
     def solve(self):
         """Run the fixed-orientation T-matrix calculation.
 
+        Efficiencies are cross sections divided by ``pi * r**2``, with ``r``
+        the volume-equivalent radius of the external spheres for the totals
+        (:meth:`get_cross_section_radius`), each sphere's radius per sphere,
+        and ``sqrt(cell area / pi)`` (projected on the incident direction)
+        with a periodic lattice, where ``qabs_tot`` is the unit-cell
+        absorptance. Normalised per ``cross_section_convention``.
+
         Returns
         -------
         dict with keys:
@@ -257,14 +339,15 @@ class MstmBindings:
         )
 
         self._solved = True
+        f = self._efficiency_factor()
 
         return {
-            "q_ext": q_ext,
-            "q_abs": q_abs,
-            "q_sca": q_sca,
-            "qext_tot": qext_tot,
-            "qabs_tot": qabs_tot,
-            "qsca_tot": qsca_tot,
+            "q_ext": q_ext / f,
+            "q_abs": q_abs / f,
+            "q_sca": q_sca / f,
+            "qext_tot": qext_tot / f,
+            "qabs_tot": qabs_tot / f,
+            "qsca_tot": qsca_tot / f,
             "solution_error": sol_err,
             "iterations": niter,
             "status": status,
@@ -315,67 +398,22 @@ class MstmBindings:
         the same ``R = Rz(alpha_deg).Ry(beta_deg)`` before calling this
         method.
 
-        **Raw S11 convention.** The returned S11 follows the
-        Bohren-Huffman convention ``dCsca/dOmega = S11 / k**2`` (i.e.
-        ``integral(S11 dOmega) over 4*pi steradians == k**2 * Csca``),
-        NOT the radiative-transfer "phase function" convention
-        (``integral(S11 dOmega) == 4*pi``) that a caller asking for "the
-        phase function" would reasonably expect. Confirmed empirically by
-        direct numerical integration for a symmetric single sphere. See
-        :func:`pymstm._convert.s11_to_phase_function` to convert to the
-        4*pi-normalized phase function convention.
+        **Raw S11 convention.** The returned S11 is MSTM's own (it does not
+        depend on ``cross_section_convention``): ``integral(S11 dOmega)
+        over 4*pi steradians == Csca``, with ``Csca = qsca * pi * r**2`` in
+        MSTM's length units (in which the vacuum wavenumber is 1) and
+        ``qsca`` from ``cross_section_convention="mstm"``. In vacuum this
+        is the Bohren-Huffman convention ``dCsca/dOmega = S11 / k**2``; in
+        a medium of real index ``n``, multiply S11 by ``n`` to get the
+        Bohren-Huffman S11 for the wavenumber in the medium. It is NOT the
+        radiative-transfer "phase function" convention
+        (``integral(S11 dOmega) == 4*pi``); see
+        :func:`pymstm._convert.s11_to_phase_function`.
         """
         if not self._solved:
             raise RuntimeError("Not solved. Call solve() first.")
 
         return self._ext.mstm_f2py_bindings.mstm_scattering_angle(costheta, phi)
-
-    def get_scattering_matrix(self):
-        """Get the full scattering matrix over all computed angles.
-
-        .. warning::
-            **This method has a confirmed, non-deterministic memory-safety
-            bug** in the underlying Fortran binding (garbage/denormal/
-            negative-S11 values that vary across repeated calls within
-            the same process, even with identical inputs). Root-caused to
-            likely an uninitialized Fortran local variable somewhere in
-            the call chain feeding this array (NOT in the underlying
-            ``scatteringmatrix()`` physics routine itself, which is
-            proven correct -- :meth:`get_scattering_angle` calls the
-            exact same routine and is 100% deterministic/reliable).
-            **Prefer looping over angles with** :meth:`get_scattering_angle`
-            **instead**, which does not exhibit this bug. This method is
-            kept only for backward compatibility and emits a
-            ``RuntimeWarning`` on every call.
-
-        Returns
-        -------
-        angles : ndarray, shape (n_angles,)
-            Cosine of the scattering angles (linear in scattering angle in degrees).
-        smatrix : ndarray, shape (32, n_angles)
-            Scattering matrix elements. First 16 rows = upward scattering,
-            rows 17-32 = downward scattering.
-        """
-        if not self._solved:
-            raise RuntimeError("Not solved. Call solve() first.")
-
-        warnings.warn(
-            "get_scattering_matrix() has a known non-deterministic "
-            "memory-safety bug (values vary across repeated calls with "
-            "identical inputs, even within the same process). Prefer "
-            "looping over get_scattering_angle() instead. See this "
-            "method's docstring for details.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-
-        ii = self._ext.inputinterface
-        smat = np.asarray(ii.scat_mat)
-        na = smat.shape[1]
-        angles_deg = np.linspace(ii.scat_mat_amin, ii.scat_mat_amax, na)
-        costheta = np.cos(angles_deg * np.pi / 180.0)
-
-        return costheta, smat
 
     def get_number_of_equations(self):
         """Return the number of equations in the linear system."""
@@ -393,8 +431,15 @@ class MstmBindings:
         """Return the effective cross-section radius of the cluster."""
         return float(self._ext.spheredata.cross_section_radius)
 
-    def compute_tmatrix(self):
+    def compute_tmatrix(self, tmatrix_file=None):
         """Compute the T-matrix for the current cluster configuration.
+
+        Parameters
+        ----------
+        tmatrix_file : path-like, optional
+            Where MSTM writes the T-matrix file, e.g. to pass it to
+            :meth:`ranorient_smatrix` later (at most 128 characters).
+            Default: a temporary file, deleted before returning.
 
         Returns
         -------
@@ -416,18 +461,27 @@ class MstmBindings:
         ntot = get_tmatrix_size(self.get_tmatrix_order())
         array_len = 2 * ntot
 
-        (tdata, tord, q_ext, q_abs, status) = (
-            self._ext.mstm_f2py_bindings.mstm_compute_tmatrix(
-                n=self._nspheres, array_len=array_len
+        with tempfile.TemporaryDirectory(prefix="pymstm-") as tmp:
+            path = (
+                os.path.join(tmp, "tmatrix.dat")
+                if tmatrix_file is None
+                else os.fspath(tmatrix_file)
             )
-        )
+            if len(path) > 128:
+                raise ValueError(f"tmatrix_file path longer than 128 characters: {path}")
+            (tdata, tord, q_ext, q_abs, status) = (
+                self._ext.mstm_f2py_bindings.mstm_compute_tmatrix(
+                    tmatrix_file=path, n=self._nspheres, array_len=array_len
+                )
+            )
 
+        f = self._efficiency_factor()
         return {
             "tmatrix": tdata,
             "tmatrix_order": tord,
             "tmatrix_size": ntot,
-            "q_ext": q_ext,
-            "q_abs": q_abs,
+            "q_ext": q_ext / f,
+            "q_abs": q_abs / f,
             "status": status,
         }
 
@@ -436,8 +490,9 @@ class MstmBindings:
 
         Parameters
         ----------
-        tmatrix_file : str
-            Path to T-matrix file (generated by compute_tmatrix or external).
+        tmatrix_file : path-like
+            Path to a T-matrix file, e.g. written by
+            ``compute_tmatrix(tmatrix_file=...)``.
 
         Returns
         -------
@@ -453,10 +508,22 @@ class MstmBindings:
         # t_matrix_order (set by prepare()/compute_tmatrix()) is the best
         # available upper bound before reading the file.
         tmat_order = self.get_tmatrix_order()
+        path = os.fspath(tmatrix_file)
 
-        sm_coef, cm_coef, tord_out = self._ext.mstm_f2py_bindings.mstm_ranorient_smatrix(
-            tmatrix_file, tmat_order=tmat_order
-        )
+        with tempfile.TemporaryDirectory(prefix="pymstm-") as tmp:
+            # MSTM reads the file name into a 30-character variable.
+            if len(path) > 30:
+                path = shutil.copy(path, os.path.join(tmp, "t.dat"))
+                if len(path) > 30:
+                    raise ValueError(
+                        "MSTM needs a T-matrix file path of at most 30 characters; "
+                        f"set TMPDIR to a shorter directory (got {path})"
+                    )
+            sm_coef, cm_coef, tord_out = (
+                self._ext.mstm_f2py_bindings.mstm_ranorient_smatrix(
+                    path, tmat_order=tmat_order
+                )
+            )
 
         n = 16 * (2 * tord_out + 1)
         return {
@@ -515,7 +582,11 @@ class MstmBindings:
         Parameters
         ----------
         cell_width_x, cell_width_y : float
-            Unit cell dimensions in x and y.
+            Unit cell dimensions in x and y, in the same length units as
+            the sphere radii/positions (scaled by ``set_length_scale()``,
+            so call that first, as for ``set_spheres()``). With a lattice,
+            ``qext_tot``/``qabs_tot``/``qsca_tot`` are per unit-cell area
+            (``qabs_tot`` is the CLI's unit-cell absorptance).
         phase_shift : bool
             Use phase-shifted lattice sums.
         finite : bool
@@ -549,7 +620,15 @@ class MstmBindings:
         self._ext.spheredata.gaussian_beam_constant = beam_constant
 
     def get_mie_efficiencies(self):
-        """Get per-sphere Mie efficiencies (computed during prepare).
+        """Get per-sphere isolated-sphere (Lorenz-Mie) efficiencies,
+        computed during prepare().
+
+        Under ``cross_section_convention="physical"`` these are the Mie
+        efficiencies of each sphere alone in a non-absorbing medium (for an
+        absorbing medium they are divided by ``Re(n)**2`` as well, but
+        extinction in an absorbing host has no unique definition). Spheres
+        inside another sphere are computed by MSTM relative to that host
+        sphere's material.
 
         Returns
         -------
@@ -557,20 +636,35 @@ class MstmBindings:
         q_abs : ndarray, shape (n,)
         """
         n = self._nspheres
-        q_ext = np.asarray(self._ext.spheredata.qext_mie[:n])
-        q_abs = np.asarray(self._ext.spheredata.qabs_mie[:n])
+        f2 = self._efficiency_factor() ** 2
+        q_ext = np.asarray(self._ext.spheredata.qext_mie[:n]) / f2
+        q_abs = np.asarray(self._ext.spheredata.qabs_mie[:n]) / f2
         return q_ext, q_abs
 
     def finalize(self):
-        """Free all allocated memory and finalize the library."""
-        if self._ext is not None:
-            self._ext.mstm_f2py_bindings.mstm_finalize()
-            self._ext = None
+        """Free all allocated memory and finalize the library.
+
+        A no-op for an instance that no longer owns MSTM's state (see
+        ``__init__``), so it never frees a newer instance's arrays.
+        """
+        with MSTM_LOCK:  # never free arrays under a running solve
+            if MstmBindings._owner is self._token:
+                _ext.mstm_f2py_bindings.mstm_finalize()
+                MstmBindings._owner = None
         self._prepared = False
         self._solved = False
 
     def __del__(self):
+        # Only the owner frees anything. GC can run this on any thread (e.g.
+        # a Dask worker's event loop): never block it behind someone else's
+        # solve -- if the lock is busy, skip; the next prepare() reallocates.
+        if MstmBindings._owner is not getattr(self, "_token", None):
+            return
+        if not MSTM_LOCK.acquire(blocking=False):
+            return
         try:
             self.finalize()
         except Exception:
             pass
+        finally:
+            MSTM_LOCK.release()

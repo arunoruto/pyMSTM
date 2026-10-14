@@ -8,7 +8,8 @@ from pymstm._cli import (
     run_mstm,
 )
 from pymstm._convert import cli_normalized_s11_to_raw, s11_to_phase_function
-from pymstm._mstm import MstmBindings
+from pymstm._dask import MstmTask, run_dask, solve_task
+from pymstm._mstm import MSTM_LOCK, MstmBindings
 from pymstm._solver import (
     MSTM,
     MstmMuellerPoint,
@@ -19,6 +20,10 @@ from pymstm._solver import (
 __all__ = [
     "MSTM",
     "MstmBindings",
+    "MSTM_LOCK",
+    "MstmTask",
+    "solve_task",
+    "run_dask",
     "run_mstm",
     "find_mstm_binary",
     "MstmRunResult",
@@ -30,4 +35,7 @@ __all__ = [
     "MstmPerSphereResult",
     "MstmMuellerPoint",
 ]
-__version__ = "1.1.0"
+
+from importlib.metadata import version as _version
+
+__version__ = _version("pymstm")

@@ -1,15 +1,21 @@
 name: Continuous Delivery
 
-# Tag-first release. semantic-release decides the version and creates the
-# tag + GitHub Release; the same commit's wheels then build (via the
-# reusable wheels.yml) and publish to PyPI. Because wheels.yml also runs
-# on every PR/push to main, a release is only ever cut for a commit whose
-# wheels have already built green -- so tag-first stays safe without the
-# build-before-tag machinery this pipeline used to carry.
+# Releasing: run this workflow by hand on main. After the test suite has
+# passed, python-semantic-release derives the next version from the commit
+# messages since the last release (configured in pyproject.toml), updates
+# pyproject.toml and CHANGELOG.md, commits, tags and creates the GitHub
+# release. wheels.yml then builds the wheels and sdist from that tag; they
+# are attached to the release and uploaded to PyPI through trusted
+# publishing (no token), from the `pypi` environment. Without commits that
+# call for a release, nothing is released.
 #
-# NOTE: the filename `publish.yml` is load-bearing -- the PyPI trusted
-# publisher for `pymstm` is configured against this exact workflow file.
-# The job that calls pypa/gh-action-pypi-publish must stay in here.
+# The tag exists before the wheels are built: if that build fails, delete
+# the release and tag (`gh release delete <tag> --cleanup-tag`) and revert
+# the release commit, or fix forward. Run wheels.yml on the PR first when
+# in doubt (it also runs on PRs that touch the build).
+#
+# PyPI's trusted publisher for pymstm is configured for this file name
+# (publish.yml); the job that uploads to PyPI must stay in here.
 
 on:
   workflow_dispatch:
@@ -35,7 +41,7 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
     steps:
       - name: Setup | Checkout Repository on Release Branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
@@ -47,11 +53,9 @@ jobs:
         run: git reset --hard ${{ github.sha }}
 
       - name: Action | Semantic Version Release
-        # Computes the next version from Conventional Commits, bumps
-        # pyproject.toml + __init__.py (per [tool.semantic_release]),
-        # commits, tags, pushes, and creates the GitHub Release.
+        # Also refuses to release if main has moved on since the run started.
         id: release
-        uses: python-semantic-release/python-semantic-release@v10.6.1
+        uses: python-semantic-release/python-semantic-release@v10.7.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           git_committer_name: "github-actions"
@@ -62,19 +66,9 @@ jobs:
     # the exact same build that's available on demand via wheels.yml.
     needs: release
     if: needs.release.outputs.released == 'true'
-    # GitHub validates a called reusable workflow's permission needs
-    # *statically*, across all its jobs, regardless of which actually run
-    # at runtime -- wheels.yml's check_comment job (skipped here, this is
-    # a workflow_call, not issue_comment) still declares issues:write/
-    # pull-requests:read, which this workflow's top-level permissions:
-    # contents: read alone doesn't cover. Without this override the whole
-    # run fails at dispatch time with "startup_failure", before any job
-    # even starts -- this exact bug hit pyFaSTMM's identical publish.yml
-    # on its first real dispatch after mirroring this pipeline (that
-    # dispatch failed with 0 jobs run; adding this same override there
-    # got it past dispatch and into the real release). Applying the same
-    # fix here proactively: this file predates wheels.yml growing
-    # check_comment, so it's never actually exercised this call path.
+    # A called workflow's permissions are checked statically across all its
+    # jobs, including wheels.yml's check_comment (skipped here), so grant
+    # what that job declares, or the run fails before starting.
     permissions:
       contents: read
       issues: write
@@ -98,14 +92,14 @@ jobs:
       contents: write # attach assets to the GitHub Release
     steps:
       - name: Download | All build artifacts (wheels + sdist)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: cibw-*
           path: dist
           merge-multiple: true
 
       - name: Publish | PyPI (trusted publishing, no token)
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@v1.14.2
 
       - name: Publish | Attach wheels + sdist to the GitHub Release
         env:

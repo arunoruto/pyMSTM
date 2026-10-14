@@ -65,7 +65,7 @@ def test_single_sphere_total_qext(tmp_path):
         radii=radii, positions=positions, orders=[12], ref_re=ref_re, ref_im=ref_im
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.set_mie_eps(1e-6)
     m.set_verbose(False)
@@ -103,7 +103,7 @@ def test_single_sphere_per_sphere_qext(tmp_path):
         radii=radii, positions=positions, orders=[12], ref_re=ref_re, ref_im=ref_im
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.set_mie_eps(1e-6)
     m.set_verbose(False)
@@ -144,7 +144,7 @@ def test_single_sphere_absorbing(tmp_path):
         radii=radii, positions=positions, orders=[12], ref_re=ref_re, ref_im=ref_im
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.set_mie_eps(1e-6)
     m.set_verbose(False)
@@ -190,7 +190,7 @@ def test_two_sphere_total_qext(tmp_path):
         radii=radii, positions=positions, orders=[6, 6], ref_re=ref_re, ref_im=ref_im
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.set_mie_eps(1e-6)
     m.set_verbose(False)
@@ -228,7 +228,7 @@ def test_two_sphere_per_sphere_qext(tmp_path):
         radii=radii, positions=positions, orders=[6, 6], ref_re=ref_re, ref_im=ref_im
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.set_mie_eps(1e-6)
     m.set_verbose(False)
@@ -272,7 +272,7 @@ def test_solution_error_agreement(tmp_path):
         radii=radii, positions=positions, orders=[12], ref_re=ref_re, ref_im=ref_im
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-8, max_iter=5000)
     m.set_mie_eps(1e-6)
     m.set_verbose(False)
@@ -314,7 +314,7 @@ def test_scattering_matrix_forward(tmp_path):
         radii=radii, positions=positions, orders=[12], ref_re=ref_re, ref_im=ref_im
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.set_mie_eps(1e-6)
     m.set_verbose(False)
@@ -363,7 +363,7 @@ def test_scattering_matrix_dlp_oblique_angle(tmp_path):
         radii=radii, positions=positions, orders=[12], ref_re=ref_re, ref_im=ref_im
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.set_mie_eps(1e-6)
     m.set_verbose(False)
@@ -425,7 +425,7 @@ def test_scattering_matrix_offaxis_cluster(tmp_path):
         radii=radii, positions=positions, orders=[8, 8], ref_re=ref_re, ref_im=ref_im
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.set_mie_eps(1e-6)
     m.set_verbose(False)
@@ -492,7 +492,7 @@ def test_scattering_matrix_azimuthal_average(tmp_path):
         radii=radii, positions=positions, orders=[8, 8], ref_re=ref_re, ref_im=ref_im
     )
     m.set_medium_ref(1.0, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.set_mie_eps(1e-6)
     m.set_azimuthal_average(True)
@@ -541,12 +541,13 @@ def test_medium_ref_index(tmp_path):
     )
     mstm_result = run_mstm(inp_path=inp, workdir=tmp_path).parsed
 
-    m = MstmBindings()
+    # The CLI prints MSTM's own normalisation.
+    m = MstmBindings(cross_section_convention="mstm")
     m.set_spheres(
         radii=radii, positions=positions, orders=[8], ref_re=ref_re, ref_im=ref_im
     )
     m.set_medium_ref(n_med, 0.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.set_mie_eps(1e-6)
     m.set_verbose(False)

@@ -18,7 +18,7 @@ def test_single_layer():
         thicknesses=[],
         ref_indices=[(1.0, 0.0), (1.5, 0.0)],  # vacuum above, glass below
     )
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.prepare()
     result = m.solve()
@@ -46,7 +46,7 @@ def test_multi_layer():
             (1.5, 0.0),  # substrate
         ],
     )
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.prepare()
     result = m.solve()
@@ -67,7 +67,7 @@ def test_periodic_lattice():
     )
     m.set_medium_ref(1.0, 0.0)
     m.set_lattice(cell_width_x=6.0, cell_width_y=6.0)
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.set_solver_params(eps=1e-6, max_iter=5000)
     m.prepare()
     result = m.solve()
@@ -90,7 +90,7 @@ def test_lattice_clear():
     m.set_medium_ref(1.0, 0.0)
     m.set_lattice(cell_width_x=5.0, cell_width_y=5.0)
     m.clear_lattice()
-    m.set_incident(0, 0, 1)
+    m.set_incident(0, 0)
     m.prepare()
     result = m.solve()
     assert result["status"] == 0
