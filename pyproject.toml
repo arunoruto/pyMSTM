@@ -1,6 +1,6 @@
 [project]
 name = "pymstm"
-version = "2.0.0"
+version = "2.1.0"
 description = "Python bindings for MSTM, the Multiple Sphere T-Matrix code: light scattering by clusters of spheres"
 readme = "README.md"
 # cp39 and cp310 builds crashed (in a solve, and in numpy's f2py), so the

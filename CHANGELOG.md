@@ -7,6 +7,27 @@ next to it.
 
 <!-- version list -->
 
+## v2.1.0 (2026-10-15)
+
+### Documentation
+
+- N_threads, Dask setup for whole-worker tasks, 2.1.0 notes
+  ([`c1e21fa`](https://github.com/arunoruto/pyMSTM/commit/c1e21fa1b583012fba50fcdd7d7cb38980628e42))
+
+### Features
+
+- **bindings**: OpenMP for periodic-lattice solves (n_threads)
+  ([`a24eaeb`](https://github.com/arunoruto/pyMSTM/commit/a24eaebd3854d3b6cdb0750033d3e6e5aa1f1589))
+
+- **dask**: MstmTask.n_threads, run_dask(resources=...)
+  ([`4650572`](https://github.com/arunoruto/pyMSTM/commit/46505722cb8224f9b057db6b613c01d026faa790))
+
+### Testing
+
+- Threaded lattice solves are bit-identical to serial ones
+  ([`8d3e776`](https://github.com/arunoruto/pyMSTM/commit/8d3e7768bb5f87d628917772d82fefafa70a4634))
+
+
 ## 2.1.0 release notes
 
 ### New
