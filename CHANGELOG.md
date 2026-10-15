@@ -7,6 +7,37 @@ next to it.
 
 <!-- version list -->
 
+## 2.1.0 release notes
+
+### New
+
+- **Multithreaded periodic-lattice solves.** `MstmBindings(n_threads=...)`
+  (also settable between solves, `m.n_threads = 4`) and
+  `MstmTask(n_threads=...)` compute the sphere-pair lattice sums, nearly all
+  of a lattice solve's time, on several cores with OpenMP. Results are
+  bit-identical to a serial solve for any thread count. Default 1 (the 2.0
+  behaviour); `0` = all CPUs of the process, a float in (0, 1] a fraction
+  of them, negative = all but that many (`pymstm._mstm.resolve_n_threads`,
+  the same convention as pyfastmm). `OMP_NUM_THREADS` does not limit it.
+  Measured on 100 iron spheres in a 160 nm cell (i9-9900K): 152 s serial,
+  77 s with 2 threads, 40 s with 4. Clusters without a lattice and layered media are unchanged
+  (serial).
+- `solve_task(task, isolate=True)` passes `n_threads` to the child process;
+  `run_dask(..., resources={"cores": 4})` forwards Dask worker resources,
+  so a task that uses a whole 4-core worker runs one per worker at a time
+  (workers started with `--resources "cores=4"`). See the README section
+  "Several cores for one lattice solve".
+
+### Packaging
+
+- The extension is built with `-fopenmp`; the Linux wheels bundle the GNU
+  OpenMP runtime `libgomp` next to `libgfortran` (GPL-3.0-or-later WITH
+  GCC-exception-3.1, see `LICENSES/gfortran-runtime.txt`).
+- The Fortran changes are a patch on MSTM's `mstm-modules-33.f90`
+  (`src/pymstm/_fortran/patches/mstm-modules-33-openmp-lattice.patch`,
+  with a description of what was made thread-safe and why); the MSTM
+  command-line program still builds from the unmodified sources.
+
 ## v2.0.0 (2026-10-14)
 
 ### Bug Fixes
