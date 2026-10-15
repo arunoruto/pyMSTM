@@ -11,8 +11,16 @@ cluster.
 Concurrency model: the Fortran calls release the GIL, so a Dask worker
 keeps heartbeating during a long solve, but MSTM's state is process-global,
 so a worker process runs one solve at a time (extra threads just queue on
-the lock). Parallelism therefore comes from worker *processes*: run workers
-with ``--nthreads 1``.
+the lock). Parallelism across tasks therefore comes from worker *processes*
+(``--nthreads 1``), or from ``isolate=True``, where every task is its own
+process.
+
+Within one task, ``MstmTask.n_threads`` runs a periodic-lattice solve on
+several cores (OpenMP; bit-identical results). Keep tasks x ``n_threads``
+per worker at its core count: with ``n_threads=4`` on a 4-core worker,
+allow one task at a time -- ``dask worker --nthreads 1``, or start the
+workers with ``--resources "cores=4"`` and pass ``resources={"cores": 4}``
+to :func:`run_dask`. ``OMP_NUM_THREADS`` does not limit ``n_threads``.
 
 ``isolate=True`` runs the solve in a fresh child interpreter (plain
 ``subprocess``, which works inside Dask's daemonic worker processes, unlike
@@ -70,6 +78,10 @@ class MstmTask:
         Advisory per-sphere Mie orders (allocation size only; truncation
         is set by ``mie_eps``). ``None``: ``max(4, x + 4 x^(1/3) + 2)``
         with ``x = radius * length_scale``.
+    n_threads : int or float
+        OpenMP threads for a lattice solve, resolved on the machine that
+        runs it (``0`` = all its CPUs); see :class:`~pymstm.MstmBindings`.
+        Default 1.
     """
 
     radii: Sequence[float]
@@ -86,6 +98,7 @@ class MstmTask:
     max_iterations: int = 5000
     mie_eps: float = 1e-6
     translation_eps: float = 1e-5
+    n_threads: int | float = 1
 
 
 def solve_task(task: MstmTask, isolate: bool = False) -> dict[str, Any]:
@@ -113,7 +126,10 @@ def solve_task(task: MstmTask, isolate: bool = False) -> dict[str, Any]:
         orders = np.maximum(4, (x + 4 * np.cbrt(x) + 2).astype(int))
     t0 = time.perf_counter()
     with MSTM_LOCK:
-        m = MstmBindings(cross_section_convention=task.cross_section_convention)
+        m = MstmBindings(
+            cross_section_convention=task.cross_section_convention,
+            n_threads=task.n_threads,
+        )
         try:
             m.set_length_scale(task.length_scale)
             m.set_spheres(radii, task.positions, orders, m_rel.real, m_rel.imag)
@@ -168,6 +184,7 @@ def run_dask(
     client: Any = None,
     scheduler_address: str | None = None,
     isolate: bool = False,
+    resources: dict[str, float] | None = None,
 ) -> list[dict[str, Any]]:
     """Solve every task on a Dask cluster; results in task order.
 
@@ -175,7 +192,10 @@ def run_dask(
     *scheduler_address* (e.g. ``"tcp://host:8786"``), else a temporary
     ``LocalCluster``; a client created here is closed on the way out.
     ``progress_callback(fraction, index)`` is called per completed task,
-    from this thread. The first failed task raises.
+    from this thread. The first failed task raises. *resources* (e.g.
+    ``{"cores": 4}``) is passed to ``client.map``: a task then runs only on
+    a worker started with at least that much (``--resources "cores=4"``),
+    one such task per worker at a time -- see the module docstring.
     """
     try:
         import distributed
@@ -191,7 +211,9 @@ def run_dask(
     if client is None:
         client = distributed.Client(scheduler_address)
     try:
-        futures = client.map(solve_task, tasks, isolate=isolate, pure=False)
+        futures = client.map(
+            solve_task, tasks, isolate=isolate, pure=False, resources=resources
+        )
         index = {f.key: i for i, f in enumerate(futures)}
         out: list[Any] = [None] * len(tasks)
         for done, f in enumerate(distributed.as_completed(futures), 1):
