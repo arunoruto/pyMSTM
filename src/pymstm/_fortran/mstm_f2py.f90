@@ -45,6 +45,7 @@ subroutine mstm_init()
     number_plane_boundaries = 0
     plane_surface_present = .false.
     periodic_lattice = .false.
+    pl_num_threads = 1  ! OpenMP threads for lattice solves (MstmBindings.n_threads)
     random_configuration = .false.
     configuration_average = .false.
     random_orientation = .false.

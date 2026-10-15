@@ -120,7 +120,8 @@ which does not depend on the convention.
   scattering efficiencies; the 4x4 Mueller matrix at any angle.
 - T-matrix of a cluster (`compute_tmatrix`), and random-orientation
   scattering matrices from it (`ranorient_smatrix`).
-- Plane boundaries (layered media) and 2D periodic lattices.
+- Plane boundaries (layered media) and 2D periodic lattices; lattice solves
+  run on several cores (`n_threads`).
 - `solve_task`/`run_dask` for many independent solves on a Dask cluster.
 - The MSTM command-line program as an alternative backend (`cli=True`,
   `run_mstm`), for cross-checks and MPI runs.
@@ -164,6 +165,33 @@ child interpreter in its own temp directory: a Fortran crash becomes a
 solve into the next. It costs one interpreter start per task (< 1 s), so it
 is off by default; turn it on for long production runs.
 
+### Several cores for one lattice solve (`n_threads`)
+
+A periodic-lattice solve spends nearly all its time on the lattice sums of
+every sphere pair, and these run in parallel (OpenMP) with
+`MstmBindings(n_threads=4)`, `m.n_threads = 4` or `MstmTask(n_threads=4)`.
+Results are bit-identical for any thread count; the default is 1. `0` means
+all CPUs this process may use, a float in (0, 1] a fraction of them, a
+negative number all but that many. `n_threads` overrides `OMP_NUM_THREADS`.
+Measured (100 iron spheres in a 160 nm cell, i9-9900K): 152 s serial, 77 s
+with 2 threads, 40 s with 4 (3.8x).
+Isolated clusters and layered media without a lattice are not parallelised.
+
+Threads x concurrent solves should not exceed a machine's cores. On Dask
+workers with 4 cores each, either
+
+- run many small tasks side by side, one core each (default `n_threads=1`,
+  `--nthreads 4` with `isolate=True`, or `--nworkers 4 --nthreads 1`), or
+- give each task the whole worker: `MstmTask(..., n_threads=4)` and one
+  task per worker at a time, i.e. `dask worker ... --nthreads 1`, or keep
+  `--nthreads 4` but start the workers with `--resources "cores=4"` and
+  call `run_dask(tasks, ..., resources={"cores": 4})`.
+
+The second gets each result up to ~4x sooner (useful when there are fewer
+large lattice tasks than workers); for many tasks, one core per task gives
+slightly higher total throughput (no parallel overhead). Never combine `n_threads=4` with 4 concurrent
+tasks per 4-core worker: 16 threads on 4 cores is slower than either.
+
 ### Running on a remote Dask cluster
 
 1. **Install pyMSTM on the workers**, with `distributed`
@@ -174,9 +202,11 @@ is off by default; turn it on for long production runs.
    a wheel built with `uv build` on NixOS links the Nix store copy and is
    not portable), and install that.
 2. **Worker settings:** `dask worker tcp://scheduler:8786 --nworkers <cores> --nthreads 1`.
-   Extra threads per worker only queue on `MSTM_LOCK`. No `worker-ttl` change
-   is needed: the GIL is released during solves, so heartbeats continue.
-   Give each worker enough `--memory-limit` for its largest geometry.
+   Extra threads per worker only queue on `MSTM_LOCK` (unless `isolate=True`,
+   where each task is its own process). For tasks with `n_threads > 1`, see
+   above. No `worker-ttl` change is needed: the GIL is released during
+   solves, so heartbeats continue. Give each worker enough `--memory-limit`
+   for its largest geometry.
 3. Run `run_dask(tasks, client=client, isolate=True)`; results come back
    in task order.
 

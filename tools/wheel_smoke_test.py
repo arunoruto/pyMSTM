@@ -45,6 +45,18 @@ def main() -> None:
     ).solve()
     assert r.q_ext_total > 0
 
+    # A lattice solve on 2 OpenMP threads (exercises the bundled libgomp):
+    # bit-identical to the serial one.
+    res = []
+    for n_threads in (1, 2):
+        m = pymstm.MstmBindings(n_threads=n_threads)
+        m.set_spheres([0.3, 0.3], [[-0.4, 0, 0], [0.4, 0.1, 0.2]], [4, 4], [1.6] * 2, [0.1] * 2)
+        m.set_lattice(1.5, 1.5)
+        m.prepare()
+        res.append(m.solve()["qabs_tot"])
+        m.finalize()
+    assert res[0] == res[1] > 0, res
+
     print(f"pyMSTM {pymstm.__version__} wheel smoke test OK (Q_ext = {qext:.6g})")
 
 

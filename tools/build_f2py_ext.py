@@ -29,6 +29,10 @@ def main():
     sources = [os.path.abspath(s) for s in sys.argv[3:]]
 
     env = dict(os.environ)
+    # -fopenmp: the lattice pair loop is parallelised (see
+    # mstm-modules-33-openmp-lattice.patch); linking libgomp makes
+    # auditwheel bundle it into the wheel, next to libgfortran.
+    ldflags = "-fopenmp"
     # -z noexecstack is a GNU ld (ELF) hardening flag with no equivalent
     # meaning on macOS's Mach-O linker, which doesn't understand -z at
     # all and aborts with "unknown options: -z" -- Linux-only. Never
@@ -36,8 +40,8 @@ def main():
     # macOS until cibuildwheel's macOS legs (see .github/workflows/
     # publish.yml) tried it for the first time.
     if sys.platform.startswith("linux"):
-        ldflags = "-Wl,-z,noexecstack"
-        env["LDFLAGS"] = f"{env['LDFLAGS']} {ldflags}" if env.get("LDFLAGS") else ldflags
+        ldflags += " -Wl,-z,noexecstack"
+    env["LDFLAGS"] = f"{env['LDFLAGS']} {ldflags}" if env.get("LDFLAGS") else ldflags
 
     with tempfile.TemporaryDirectory() as scratch:
         cmd = [
@@ -51,6 +55,8 @@ def main():
             ":",
             "-m",
             "_mstm_ext",
+            "--f90flags=-fopenmp",
+            "-lgomp",
             # With numpy < 2.0, f2py's "-c" mode defaults to the legacy,
             # unmaintained numpy.distutils backend (an extension built that
             # way segfaulted in a two-sphere solve). Force the meson
