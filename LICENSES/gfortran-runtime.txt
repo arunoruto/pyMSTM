@@ -1,23 +1,26 @@
-GNU Fortran runtime libraries bundled in the Linux wheels
+GNU Fortran and OpenMP runtime libraries bundled in the Linux wheels
 
-The Linux wheels on PyPI are repaired with auditwheel, which copies two
+The Linux wheels on PyPI are repaired with auditwheel, which copies three
 shared libraries of the GNU Compiler Collection into pymstm.libs/:
 
   libgfortran.so.5  GNU Fortran runtime library
+                    GPL-3.0-or-later WITH GCC-exception-3.1
+  libgomp.so.1      GNU Offloading and Multi Processing (OpenMP) runtime
+                    library, since pyMSTM 2.1
                     GPL-3.0-or-later WITH GCC-exception-3.1
   libquadmath.so.0  GCC quad-precision math library
                     LGPL-2.1-or-later
 
 They are the libraries of the manylinux_2_28 (AlmaLinux 8) build image
 that cibuildwheel uses (gcc-gfortran and gcc-toolset packages). Their
-source code is part of GCC: https://gcc.gnu.org/ (directories libgfortran/
-and libquadmath/ of https://gcc.gnu.org/git/gcc.git); the exact sources of
+source code is part of GCC: https://gcc.gnu.org/ (directories libgfortran/,
+libgomp/ and libquadmath/ of https://gcc.gnu.org/git/gcc.git); the exact sources of
 the packaged builds are the AlmaLinux 8 source RPMs (gcc, gcc-toolset-*),
-https://vault.almalinux.org/. Both are ordinary shared libraries: a
+https://vault.almalinux.org/. All are ordinary shared libraries: a
 modified build can replace the file in pymstm.libs/ (keeping its name).
 
 The GCC Runtime Library Exception lets pymstm's compiled extension, which
-is linked against libgfortran, be distributed under its own terms (MIT,
+is linked against libgfortran and libgomp, be distributed under its own terms (MIT,
 see LICENSE and LICENSES/MSTM.txt).
 
 The licence texts follow: the GNU General Public License, version 3; the

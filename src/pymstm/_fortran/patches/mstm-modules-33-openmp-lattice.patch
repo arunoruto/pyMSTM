@@ -1,0 +1,345 @@
+OpenMP for periodic-lattice solves (pyMSTM 2.1).
+
+Applied on top of mstm-modules-33-f2py-data-fix.patch, to the copy of
+mstm-modules-33.f90 compiled into the Python extension only (the MSTM CLI
+builds from the unmodified upstream source). Parallelises the one hot loop
+of a periodic-lattice solve; with pl_num_threads = 1 (the default) the
+upstream code path runs unchanged.
+
+periodic_lattice_sphere_interaction: every solver iteration (MSTM does not
+store the matrices unless store_translation_matrix, which pyMSTM keeps
+off) loops over all sphere pairs (i,j), computes the lattice-summed pair
+matrix with plane_boundary_lattice_interaction and applies it to the
+right-hand sides. With pl_num_threads > 1 the pair matrices are computed
+in parallel ahead of that loop, a chunk of consecutive pairs (in the loop's
+own order, at most pl_chunk_elements matrix elements) at a time; the loop
+then copies each matrix instead of computing it. Pair order, nmat
+numbering, storage and the order in which the matrices are applied to aout
+are the serial code's, so results are bit-identical for any thread count.
+finite_lattice (a test option; uses gentranmatrix and its saved state)
+stays serial.
+
+Shared state written by plane_boundary_lattice_interaction and its callees
+(audited: periodic_lattice_subroutines, layer_gf/layer_gfos/layer_gfrec,
+and the specialfuncs routines they call, which only read saved constants
+and the numconstants tables):
+- COMMON /qkernelcommon/: the parameters of the q1d/q2d integrands, set in
+  q2db/q1dbnosource and read in qkernel1d/qkernel2d -> threadprivate.
+- pl_max_subdivs (reset and read back within one matrix), pl_fs_method,
+  pl_rs_imax, q1d/q2d_number_segments, time_0, time_count (diagnostics),
+  number_gf_iterations (reset in layer_gf, read in layer_gfos) ->
+  threadprivate, and hidden from f2py (a thread-local address is
+  meaningless to Python).
+- pl_error_codes(:), error_codes(1): "something did not converge" flags,
+  read after the solve -> stay shared, set with atomic writes.
+New module variables: pl_num_threads (default 1; set from Python through
+the f2py module attribute) and pl_chunk_elements (default 4194304 complex
+numbers = 64 MiB of pair matrices per chunk).
+
+--- a/external/mstm/december2023/mstm-modules-33.f90
++++ b/external/mstm/december2023/mstm-modules-33.f90
+@@ -2772,6 +2772,8 @@
+       ! mstm_f2py.f90:mstm_init() instead.)
+       data pole_integration_radius/1.d-6/
+       data g_cut,g_sing_mag/10.d0,1.d5/
++!$omp threadprivate(number_gf_iterations)
++!f2py intent(hide) :: number_gf_iterations
+ 
+       contains
+          subroutine plane_boundary_initialization()
+@@ -2980,6 +2982,7 @@
+             number_gf_iterations=max(number_gf_iterations,iter)
+          enddo
+          if(number_gf_iterations.gt.max_gf_iterations) then
++!$omp atomic write
+             error_codes(1)=1
+          endif
+          end subroutine layer_gfos
+@@ -4022,6 +4025,20 @@
+       data pl_integration_error_epsilon,pl_integration_limit_epsilon,pl_integration_method/1.d-7,1.d-9,1/
+       data time_count/0.d0,0.d0,0.d0,0.d0/
+       data phase_shift_form,finite_lattice/.false.,.false./
++!
++! OpenMP (pyMSTM): pl_num_threads > 1 computes the lattice pair matrices of
++! periodic_lattice_sphere_interaction in parallel. The variables below are
++! per-call scratch/diagnostics written on that path, so each thread gets
++! its own copy; pl_error_codes stays shared (set with atomic writes).
++!
++      integer :: pl_num_threads
++      integer :: pl_chunk_elements
++      data pl_num_threads/1/
++      data pl_chunk_elements/4194304/
++!$omp threadprivate(pl_max_subdivs,pl_fs_method,pl_rs_imax,q1d_number_segments, &
++!$omp    q2d_number_segments,time_0,time_count)
++!f2py intent(hide) :: pl_max_subdivs,pl_fs_method,pl_rs_imax,q1d_number_segments
++!f2py intent(hide) :: q2d_number_segments,time_0,time_count
+ 
+       contains
+ 
+@@ -4141,7 +4158,10 @@
+          enddo
+          nterms=n
+          pl_rs_imax=nterms
+-         if(nterms.ge.pl_rs_nmax) pl_error_codes(3)=1
++         if(nterms.ge.pl_rs_nmax) then
++!$omp atomic write
++            pl_error_codes(3)=1
++         endif
+          deallocate(dkernel)
+          allocate(rsmat(2*nodrt*(nodrt+2),2*nodrs*(nodrs+2)))
+          do l=1,nodrs
+@@ -4262,7 +4282,10 @@
+                call swf_lattice_sum(wmax,rpos(1),rpos(2),rpos(3),cell_width,incident_lateral_vector, &
+                   ri,ysum,include_source=incsrc)
+                if(time_it) time_count(1)=mstm_mpi_wtime()-time_0+time_count(1)
+-               if(pl_max_subdivs.ge.maximum_integration_subdivisions) pl_error_codes(1)=1
++               if(pl_max_subdivs.ge.maximum_integration_subdivisions) then
++!$omp atomic write
++                  pl_error_codes(1)=1
++               endif
+             else
+                pl_fs_method=1
+                if(time_it) time_0=mstm_mpi_wtime()
+@@ -4273,7 +4296,10 @@
+                   call scalar_wave_function(wmax,3,rpos(1),rpos(2),rpos(3),ri,swf)
+                   ysum=ysum-swf
+                endif
+-               if(nterms.ge.pl_rs_nmax) pl_error_codes(2)=1
++               if(nterms.ge.pl_rs_nmax) then
++!$omp atomic write
++                  pl_error_codes(2)=1
++               endif
+             endif
+             do l=1,nodrs
+                ll1=l*(l+1)
+@@ -4425,7 +4451,10 @@
+             if(maxval(cerr).lt.pl_rs_eps) exit
+          enddo
+          nterms=n
+-         if(nterms.ge.pl_rs_nmax) pl_error_codes(3)=1
++         if(nterms.ge.pl_rs_nmax) then
++!$omp atomic write
++            pl_error_codes(3)=1
++         endif
+          deallocate(dqsum)
+          qsum=qsum/cell_width(1)/cell_width(2)*pi**1.5d0
+          allocate(mat(2*nodrt*(nodrt+2),2*nodrs*(nodrs+2)))
+@@ -4617,7 +4646,10 @@
+                endif
+             endif
+          enddo
+-         if(.not.convrg) pl_error_codes(6)=1
++         if(.not.convrg) then
++!$omp atomic write
++            pl_error_codes(6)=1
++         endif
+          if(k0z.eq.0.d0) then
+             do s=1,smaxp
+                kz=-2.d0*pi*dble(s)/w(2)
+@@ -4663,7 +4695,10 @@
+                   endif
+                endif
+             enddo
+-            if(.not.convrg) pl_error_codes(6)=1
++            if(.not.convrg) then
++!$omp atomic write
++               pl_error_codes(6)=1
++            endif
+          endif
+          deallocate(sum1)
+          end subroutine swfyzlatticesum
+@@ -4696,7 +4731,10 @@
+                exit
+             endif
+          enddo
+-         if(.not.convrg) pl_error_codes(6)=1
++         if(.not.convrg) then
++!$omp atomic write
++            pl_error_codes(6)=1
++         endif
+          if(k0z.eq.0.) then
+             smaxn=-smaxp
+             do s=1,smaxp
+@@ -4715,7 +4753,10 @@
+                   exit
+                endif
+             enddo
+-            if(.not.convrg) pl_error_codes(6)=1
++            if(.not.convrg) then
++!$omp atomic write
++               pl_error_codes(6)=1
++            endif
+          endif
+          call q1dbnosource(nodr,x,y,z,w(2),k0z,ri,q1d)
+          do n=0,nodr
+@@ -4744,6 +4785,7 @@
+          real(8) :: t,x,y,w,kz,tt,dt,k0y,z
+          complex(8) :: qfunc(ntot),ci,u,efunc1,efunc2,pfunc1,pfunc2,c,du,v,rkz,ri
+          common/qkernelcommon/nodr,integrationmodel,x,y,z,w,k0y,kz,ri
++!$omp threadprivate(/qkernelcommon/)
+          data ci/(0.d0,1.d0)/
+          if(integrationmodel.eq.0) then
+             tt=t
+@@ -4774,6 +4816,7 @@
+          real(8) :: x,y,w,k0y,kz,xc,yc,wc,k0yc,kzc,zc,t0,t1,cerr,dseg
+          complex(8) :: qint(-nodr:nodr),qintt(-nodr:nodr),qintp(-nodr:nodr),ri,ric
+          common/qkernelcommon/nodrc,integrationmodel,xc,yc,zc,wc,k0yc,kzc,ric
++!$omp threadprivate(/qkernelcommon/)
+          nodrc=nodr
+          xc=x
+          yc=y
+@@ -4802,7 +4845,10 @@
+             ec=0
+             call gkintegrate(ntot,t0,t1,qkernel2d,qintt,subdiv,ec, &
+                pl_integration_error_epsilon,minimum_integration_spacing,maximum_integration_subdivisions)
+-            if(ec.ne.0) pl_error_codes(4)=1
++            if(ec.ne.0) then
++!$omp atomic write
++               pl_error_codes(4)=1
++            endif
+             cerr=sum(cdabs(qintt))
+             qint=qint+qintt
+             cerr=cerr/sum(cdabs(qint))
+@@ -4829,7 +4875,10 @@
+             ec=0
+             call gkintegrate(ntot,t0,t1,qkernel2d,qintt,subdiv,ec, &
+                pl_integration_error_epsilon,minimum_integration_spacing,maximum_integration_subdivisions)
+-            if(ec.ne.0) pl_error_codes(4)=1
++            if(ec.ne.0) then
++!$omp atomic write
++               pl_error_codes(4)=1
++            endif
+             cerr=sum(cdabs(qintt))
+             qintp=qintp+qintt
+             cerr=cerr/sum(cdabs(qintp))
+@@ -4847,6 +4896,7 @@
+          complex(8) :: qfunc(ntot),ymn1(0:nodr*(nodr+2)),ci,u,st1,rhos, &
+                        ephi,bfunc(-nodr:nodr),expzfunc1,expzfunc2,c,ri
+          common/qkernelcommon/nodr,integrationmodel,x,y,z,w,k0y,k0z,ri
++!$omp threadprivate(/qkernelcommon/)
+          data ci/(0.d0,1.d0)/
+          if(integrationmodel.eq.0) then
+             tt=t
+@@ -4892,6 +4942,7 @@
+          real(8) :: x,y,z,w,kz,xc,yc,zc,wc,kzc,k0yc,t0,t1,cerr,dseg
+          complex(8) :: qint(0:nodr*(nodr+2)),qintt(0:nodr*(nodr+2)),ri,ric
+          common/qkernelcommon/nodrc,integrationmodel,xc,yc,zc,wc,k0yc,kzc,ric
++!$omp threadprivate(/qkernelcommon/)
+          nodrc=nodr
+          xc=x
+          yc=y
+@@ -4920,7 +4971,10 @@
+             ec=0
+             call gkintegrate(ntot,t0,t1,qkernel1d,qintt,subdiv,ec, &
+                pl_integration_error_epsilon,minimum_integration_spacing,maximum_integration_subdivisions)
+-            if(ec.ne.0) pl_error_codes(5)=1
++            if(ec.ne.0) then
++!$omp atomic write
++               pl_error_codes(5)=1
++            endif
+             cerr=sum(cdabs(qintt))
+             qint=qint+qintt
+             cerr=cerr/sum(cdabs(qint))
+@@ -6017,6 +6071,13 @@
+          integer :: neqns,rank,numprocs,nrhs,nmat,mpicomm,proc,i,j,rhs, &
+                     i1,i2,j1,j2,task,rank0,nbi,nbj,rmatdim
+          integer, save :: nmat_tot
++         logical :: ompmat
++         integer :: nloc,chunk_last,ip,ii,jj,nbii,nbjj
++         integer(8) :: nelem
++         integer, allocatable :: pair_i(:),pair_j(:)
++         integer(8), allocatable :: pair_off(:)
++         real(8) :: rpp(3)
++         complex(8), allocatable :: pbuf(:)
+          integer, optional :: mpi_comm
+          real(8) :: rp(3),time1,time2
+          complex(8) :: ain(neqns,nrhs),aout(neqns,nrhs),ri
+@@ -6075,6 +6136,36 @@
+             endif
+          endif
+ 
++!
++! OpenMP (pyMSTM): with pl_num_threads > 1 the matrices of this rank's pairs
++! are computed in parallel, a chunk of consecutive pairs (in the loop order
++! below) at a time, into pbuf; the loop below then copies each one instead
++! of computing it. Everything else -- pair order, nmat numbering, storage,
++! and the order in which the matrices are applied to aout -- is the serial
++! code's, so the result is bit-identical for any thread count. The finite-
++! lattice test option goes through gentranmatrix (saved state) and stays
++! serial.
++!
++         ompmat=calcmat.and.pl_num_threads.gt.1.and..not.finite_lattice
++         if(ompmat) then
++            allocate(pair_i(nmat_tot),pair_j(nmat_tot),pair_off(nmat_tot+1))
++            nloc=0
++            task=0
++            do i=1,number_spheres
++               do j=1,number_spheres
++                  if((host_sphere(i).eq.0).and.(host_sphere(j).eq.0)) then
++                     task=task+1
++                     if(mod(task,numprocs).eq.rank) then
++                        nloc=nloc+1
++                        pair_i(nloc)=i
++                        pair_j(nloc)=j
++                     endif
++                  endif
++               enddo
++            enddo
++            chunk_last=0
++         endif
++
+          task=0
+          nmat=0
+          aout=0.d0
+@@ -6111,9 +6202,48 @@
+                            allocate(rmat%matrix(rmatdim))
+                            loc_rmat=>rmat
+                         endif
+-                        call plane_boundary_lattice_interaction(sphere_order(i),sphere_order(j), &
+-                           rp(1),rp(2),sphere_position(3,i),sphere_position(3,j), &
+-                           loc_rmat%matrix,include_source=.true.,lr_transformation=.true.,index_model=2)
++                        if(ompmat) then
++                           if(nmat.gt.chunk_last) then
++! next chunk: pairs nmat..chunk_last, at most pl_chunk_elements matrix
++! elements (always at least one pair)
++                              pair_off(nmat)=0
++                              ip=nmat
++                              do while(ip.le.nloc)
++                                 nbii=sphere_order(pair_i(ip))*(sphere_order(pair_i(ip))+2)
++                                 nbjj=sphere_order(pair_j(ip))*(sphere_order(pair_j(ip))+2)
++                                 if(plane_surface_present) then
++                                    nelem=4_8*nbii*nbjj
++                                 else
++                                    nelem=2_8*nbii*nbjj
++                                 endif
++                                 if(ip.gt.nmat.and.pair_off(ip)+nelem.gt.pl_chunk_elements) exit
++                                 pair_off(ip+1)=pair_off(ip)+nelem
++                                 ip=ip+1
++                              enddo
++                              chunk_last=ip-1
++                              if(allocated(pbuf)) then
++                                 if(size(pbuf,kind=8).lt.pair_off(chunk_last+1)) deallocate(pbuf)
++                              endif
++                              if(.not.allocated(pbuf)) allocate(pbuf(pair_off(chunk_last+1)))
++!$omp parallel do schedule(dynamic,1) num_threads(pl_num_threads) &
++!$omp    default(shared) private(ip,ii,jj,rpp)
++                              do ip=nmat,chunk_last
++                                 ii=pair_i(ip)
++                                 jj=pair_j(ip)
++                                 rpp=sphere_position(:,ii)-sphere_position(:,jj)
++                                 call plane_boundary_lattice_interaction(sphere_order(ii),sphere_order(jj), &
++                                    rpp(1),rpp(2),sphere_position(3,ii),sphere_position(3,jj), &
++                                    pbuf(pair_off(ip)+1:pair_off(ip+1)),include_source=.true., &
++                                    lr_transformation=.true.,index_model=2)
++                              enddo
++!$omp end parallel do
++                           endif
++                           loc_rmat%matrix(1:rmatdim)=pbuf(pair_off(nmat)+1:pair_off(nmat)+rmatdim)
++                        else
++                           call plane_boundary_lattice_interaction(sphere_order(i),sphere_order(j), &
++                              rp(1),rp(2),sphere_position(3,i),sphere_position(3,j), &
++                              loc_rmat%matrix,include_source=.true.,lr_transformation=.true.,index_model=2)
++                        endif
+                         if(smopt.and.store_translation_matrix.and.rank0.eq.0) then
+                            time2=mstm_mpi_wtime()
+                            if(time2-time1.ge.15.d0) then

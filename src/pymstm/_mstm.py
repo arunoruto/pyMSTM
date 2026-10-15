@@ -58,6 +58,28 @@ from . import _mstm_ext as _ext
 MSTM_LOCK = threading.RLock()
 
 
+def resolve_n_threads(n_threads):
+    """Resolve an ``n_threads`` setting to a thread count (at least 1).
+
+    Same convention as pyfastmm's ``resolve_n_threads``, counting the CPUs
+    this process may run on (its affinity mask, e.g. a container cpuset):
+
+    - a positive int (or a float > 1): that many threads;
+    - a float in (0, 1]: that fraction of the CPUs, e.g. ``0.5``;
+    - ``0``: all of them;
+    - a negative int: all but that many, e.g. ``-1``.
+    """
+    if hasattr(os, "sched_getaffinity"):
+        cpus = len(os.sched_getaffinity(0))
+    else:
+        cpus = os.cpu_count() or 1
+    if isinstance(n_threads, float) and 0 < n_threads <= 1:
+        return max(1, round(cpus * n_threads))
+    if n_threads > 0:
+        return round(n_threads)
+    return max(1, round(cpus + n_threads))
+
+
 def get_tmatrix_size(tmatrix_order):
     """Number of complex T-matrix entries for a given truncation order.
 
@@ -104,6 +126,15 @@ class MstmBindings:
 
         The scattering matrix (:meth:`get_scattering_angle`) is MSTM's
         either way; see its Notes.
+    n_threads : int or float
+        OpenMP threads for one :meth:`solve` of a periodic lattice
+        (``set_lattice``), which computes its sphere-pair lattice sums in
+        parallel. Results are bit-identical for any value. Default 1;
+        ``0`` = all CPUs of this process, a float in (0, 1] a fraction of
+        them, negative = all but that many (:func:`resolve_n_threads`).
+        Overrides ``OMP_NUM_THREADS``. Clusters without a lattice, layers
+        and the other calculations are not parallelised. Can be changed
+        between solves (``m.n_threads = 4``).
     """
 
     # MSTM keeps all state in process-global Fortran module variables, so
@@ -111,13 +142,15 @@ class MstmBindings:
     # instances raise instead of silently using (or freeing) its arrays.
     _owner = None
 
-    def __init__(self, cross_section_convention="physical"):
+    def __init__(self, cross_section_convention="physical", n_threads=1):
         if cross_section_convention not in ("physical", "mstm"):
             raise ValueError(
                 "cross_section_convention must be 'physical' or 'mstm', "
                 f"got {cross_section_convention!r}"
             )
         self.cross_section_convention = cross_section_convention
+        resolve_n_threads(n_threads)  # fail early on nonsense
+        self.n_threads = n_threads
         self._nspheres = 0
         self._prepared = False
         self._solved = False
@@ -334,6 +367,9 @@ class MstmBindings:
         if not self._prepared:
             raise RuntimeError("Not prepared. Call prepare() first.")
 
+        self._ext.periodic_lattice_subroutines.pl_num_threads = resolve_n_threads(
+            self.n_threads
+        )
         (q_ext, q_abs, q_sca, qext_tot, qabs_tot, qsca_tot, sol_err, niter, status) = (
             self._ext.mstm_f2py_bindings.mstm_solve(n=self._nspheres)
         )

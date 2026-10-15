@@ -41,6 +41,19 @@ mstm_modules_patched = custom_target(
   command: [py, files('tools' / 'apply_patch.py'), '@INPUT0@', '@INPUT1@', '@OUTPUT@'],
 )
 
+# Chained on the f2py fix: OpenMP for the pair loop of periodic-lattice
+# solves (pl_num_threads), plus the thread-safety changes that needs. See
+# the header of the .patch file.
+mstm_modules_openmp = custom_target(
+  'mstm-modules-33-openmp',
+  input: [
+    mstm_modules_patched,
+    patches_dir / 'mstm-modules-33-openmp-lattice.patch',
+  ],
+  output: 'mstm-modules-33-openmp.f90',
+  command: [py, files('tools' / 'apply_patch.py'), '@INPUT0@', '@INPUT1@', '@OUTPUT@'],
+)
+
 # --- The f2py extension itself ---
 #
 # Built via numpy.f2py's own "-c" compile mode (the same command
@@ -69,7 +82,7 @@ f2py_only = [
 f2py_sources = [
   mstm_dir / 'mstm-intrinsics.f90',
   mstm_dir / 'mpidefs-serial.f90',
-  mstm_modules_patched,
+  mstm_modules_openmp,
   mstm_dir / 'fft_translation-5.f90',
   mstm_dir / 'mstm-scatprops-26.f90',
   mstm_dir / 'mstm-solver-8.f90',
